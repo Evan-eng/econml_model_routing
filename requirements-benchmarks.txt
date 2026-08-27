@@ -1,0 +1,2 @@
+# Optional standardized evaluation layer (MATH-500 and HumanEval Instruct).
+lm_eval[hf,math]==0.4.10
