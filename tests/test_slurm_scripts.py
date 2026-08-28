@@ -9,6 +9,36 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class IceSlurmScriptTests(unittest.TestCase):
+    def test_robustness_recovery_uses_adapter_smoke_and_source_aligned_arrays(self) -> None:
+        submitter = (ROOT / "slurm" / "submit_robustness_recovery.sh").read_text(
+            encoding="utf-8"
+        )
+        worker = (ROOT / "slurm" / "robustness_recovery.sbatch").read_text(
+            encoding="utf-8"
+        )
+        smoke = (ROOT / "slurm" / "robustness_recovery_smoke.sbatch").read_text(
+            encoding="utf-8"
+        )
+        finalizer = (
+            ROOT / "slurm" / "robustness_recovery_finalize.sbatch"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('ENDPOINT_INDICES="0,20,40"', submitter)
+        self.assertIn('REMAINING_INDICES="1-19,21-39,41-44"', submitter)
+        self.assertIn("aftercorr:${SOURCE_ENDPOINT_JOB}", submitter)
+        self.assertIn("aftercorr:${SOURCE_REMAINING_JOB}", submitter)
+        self.assertIn("afterok:${SMOKE_JOB}", submitter)
+        self.assertIn("%42", submitter)
+        self.assertIn("SOURCE_ACCOUNT_JOB_IDS", submitter)
+        self.assertIn("SUPERSEDED_ACCOUNT_JOB_IDS", submitter)
+        self.assertIn("--recovery-profile", worker)
+        self.assertIn("--recovery-profile 40", smoke)
+        self.assertIn("--recovery-smoke", smoke)
+        self.assertIn("--limit 1", smoke)
+        self.assertIn("sacct -X", finalizer)
+        for text in (worker, smoke, finalizer):
+            self.assertNotIn("#SBATCH --account", text)
+            self.assertNotIn("#SBATCH --partition", text)
     def test_exploratory_launcher_uses_sparse_aftercorr_array(self) -> None:
         submitter = (ROOT / "slurm" / "submit_exploratory_robustness.sh").read_text(
             encoding="utf-8"

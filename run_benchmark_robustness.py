@@ -29,6 +29,11 @@ from exploratory_robustness import (
     validate_extension_source_receipt,
     validated_source_run,
 )
+from robustness_recovery import (
+    recovery_profile_selector,
+    validate_recovery_runtime_gates,
+    validate_recovery_source_receipt,
+)
 
 
 DEFAULT_TASKS = "hendrycks_math500,humaneval_instruct"
@@ -111,9 +116,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=int,
         help="full confirmatory-grid index for one exploratory extension profile",
     )
+    profile_selection.add_argument(
+        "--recovery-profile",
+        help="baseline or full source-grid index for a receipt-bound recovery run",
+    )
     parser.add_argument(
         "--source-experiment-dir",
         help="sealed confirmatory run supplying adapters to a separate extension run",
+    )
+    parser.add_argument(
+        "--recovery-smoke",
+        action="store_true",
+        help="write a bounded recovery probe outside the terminal result namespace",
     )
     parser.add_argument("--batch-size", default="auto")
     parser.add_argument("--dtype", default="bfloat16")
@@ -133,6 +147,20 @@ def mixture_label(value: float) -> str:
     return f"{value:.4f}".replace(".", "p")
 
 
+def robustness_output_root(
+    experiment_dir: Path,
+    *,
+    exploratory_extension: bool,
+    recovery_smoke: bool,
+) -> Path:
+    """Return the isolated result namespace for one robustness mode."""
+    if recovery_smoke:
+        return experiment_dir / "smoke_robustness_benchmarks"
+    if exploratory_extension:
+        return experiment_dir / "exploratory_robustness_benchmarks"
+    return experiment_dir / "robustness_benchmarks"
+
+
 def profile_for_grid_index(design: Mapping[str, object], index: int) -> str:
     """Return one nonconfirmatory profile in the source grid order."""
     arms = grid_arms(design)
@@ -145,7 +173,9 @@ def profile_for_grid_index(design: Mapping[str, object], index: int) -> str:
 
 
 def robustness_input_releases(
-    profile_release: str, source_receipt: Mapping[str, object] | None
+    profile_release: str,
+    source_receipt: Mapping[str, object] | None,
+    runtime_releases: Sequence[str] = (),
 ) -> list[str]:
     """Return the source gate plus exact profile release for a terminal receipt."""
     if source_receipt is None:
@@ -153,7 +183,7 @@ def robustness_input_releases(
     source_release = source_receipt.get("output_release")
     if not isinstance(source_release, str) or not source_release:
         raise RuntimeError("Exploratory source receipt has no output release")
-    return [source_release, profile_release]
+    return [source_release, *runtime_releases, profile_release]
 
 
 def parse_profiles(raw: str | None, design: dict[str, object]) -> list[dict[str, object]]:
@@ -265,18 +295,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.source_experiment_dir
         else experiment_dir
     )
-    exploratory_extension = source_experiment_dir != experiment_dir
+    external_source = source_experiment_dir != experiment_dir
+    recovery_run = external_source and args.recovery_profile is not None
+    exploratory_extension = external_source and not recovery_run
+    if args.recovery_smoke and (not recovery_run or args.limit is None):
+        raise ValueError("Recovery smoke requires --recovery-profile and --limit")
     active_run_contract(
         experiment_dir,
-        require_prepared_receipt=not exploratory_extension,
+        require_prepared_receipt=not external_source,
     )
     source_receipt: dict[str, object] | None = None
+    runtime_releases: list[str] = []
     if exploratory_extension:
         if args.profile_index is None:
             raise ValueError("Exploratory extension requires --profile-index")
         validated_source_run(source_experiment_dir)
         source_receipt = validate_extension_source_receipt(
             experiment_dir, source_experiment_dir
+        )
+    elif recovery_run:
+        validated_source_run(source_experiment_dir)
+        source_receipt = validate_recovery_source_receipt(
+            experiment_dir, source_experiment_dir
+        )
+        runtime_releases = validate_recovery_runtime_gates(
+            experiment_dir,
+            source_experiment_dir,
+            recovery_smoke=args.recovery_smoke,
         )
     elif args.profile_index is not None:
         raise ValueError("--profile-index is reserved for a separate exploratory extension")
@@ -297,16 +342,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     lm_eval_module = importlib.import_module("lm_eval")
     task_root = Path(str(lm_eval_module.__file__)).resolve().parent / "tasks"
-    requested_profiles = (
-        profile_for_grid_index(design, args.profile_index)
-        if args.profile_index is not None
-        else args.profiles
-    )
+    if recovery_run:
+        requested_profiles = recovery_profile_selector(design, args.recovery_profile)
+    elif args.profile_index is not None:
+        requested_profiles = profile_for_grid_index(design, args.profile_index)
+    else:
+        requested_profiles = args.profiles
     profiles = parse_profiles(requested_profiles, design)
-    output_root = experiment_dir / (
-        "exploratory_robustness_benchmarks"
-        if exploratory_extension
-        else "robustness_benchmarks"
+    output_root = robustness_output_root(
+        experiment_dir,
+        exploratory_extension=exploratory_extension,
+        recovery_smoke=args.recovery_smoke,
     )
     output_root.mkdir(parents=True, exist_ok=True)
     hf_home = Path(os.environ.get("HF_HOME", experiment_dir / "hf_cache")).resolve()
@@ -426,17 +472,28 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "completed_at_utc": utc_now(),
                     "profile": profile_name,
                     "tasks": tasks,
+                    "limit": args.limit,
                     "results_sha256": sha256_file(output_path),
                     **contract_release_fields(
                         experiment_dir,
                         stage=(
-                            "exploratory-robustness"
-                            if exploratory_extension
-                            else "robustness"
+                            "robustness-recovery-smoke"
+                            if args.recovery_smoke
+                            else (
+                                "robustness-recovery"
+                                if recovery_run
+                                else (
+                                    "exploratory-robustness"
+                                    if exploratory_extension
+                                    else "robustness"
+                                )
+                            )
                         ),
                         output_identity=profile_name,
                         input_producer_releases=robustness_input_releases(
-                            input_release, source_receipt
+                            input_release,
+                            source_receipt,
+                            runtime_releases,
                         ),
                     ),
                     **result_fingerprints(experiment_dir),

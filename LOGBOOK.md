@@ -657,3 +657,68 @@ Inference: Submission and its operational gates are verified, but there is no
 new exploratory scientific result yet. Extension tasks will release
 individually only after their matching source arm exits successfully; the
 accepted source run remains the critical path.
+
+[2026-08-28 15:24 EDT] AUTHORITY receipt-bound robustness recovery goal
+
+goal: Repair the deterministic whole-process sandbox failure, reuse the
+accepted source baseline and all 45 adapters without retraining, and evaluate
+MATH-500 and HumanEval for all 46 profiles through an accepted combined export.
+The baseline and seed-11 endpoint profiles remain confirmatory; the other 42
+profiles remain exploratory.
+
+authority: The owner's standing authorization covers topic-branch publication,
+exact-SHA deployment, replacement robustness submission, source-aligned
+one-GPU fan-out, and bounded operational recovery inside this experiment
+contract. It does not cover protected branches, force operations, unrelated
+jobs, design reduction, or blind application-failure retries. This authority
+has been consumed and must not be requested again for this chain.
+
+[2026-08-28 15:24 EDT] Deterministic robustness sandbox failure contained
+
+Observation: Adapter robustness tasks in superseded extension
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-robustness-all-20260828T183840Z-d172354539dc`
+failed across independent array elements when the PEFT/bitsandbytes/Triton
+import path attempted absolute `/sbin/ldconfig` inside bubblewrap. The exact
+exception was `FileNotFoundError` for `/sbin/ldconfig`; this was an application
+sandbox defect, not an OOM, node failure, preemption, or scientific result.
+
+Action: Receipt-listed extension array `5595433` and finalizer `5595434` were
+cancelled after the repeated deterministic failures. The source release used
+the same sandbox construction, so its not-yet-allocated robustness job
+`5595241` and dependent finalizer `5595243` were also cancelled. Source
+training, endpoint reporting, and analysis were not altered. All failed and
+cancelled allocation rows remain retained for accounting.
+
+Inference: Retrying either sealed robustness stage would reproduce the same
+defect. A new exact-SHA recovery release is required; accepted source adapters
+remain valid and do not require retraining.
+
+[2026-08-28 15:24 EDT] Recovery implementation passed local release gates
+
+Observation: The corrected GPU sandbox exposes only `/sbin/ldconfig` and
+`/etc/ld.so.cache` as read-only inputs while retaining the networkless
+whole-process boundary. A new recovery contract binds the accepted source run,
+failed extension, new GPU doctor, bounded adapter smoke, exact source profile
+release, and each terminal output. The source-aligned fan-out contains one
+baseline, endpoint indices `0,20,40`, and remaining indices
+`1-19,21-39,41-44`; its finalizer requires all 46 robustness receipts and the
+source analysis, exports required raw predictions and interpretation files,
+and accounts allocation-only rows from the source, failed extension, and
+recovery jobs.
+
+Verification: `uv run ruff check .`, `uv run pyright`, `uv run pytest -q`
+(54 passed), `uv lock --check`, `bash -n slurm/*.sbatch slurm/*.sh`, ShellCheck
+with only the expected dynamic-source `SC1091` suppression, and
+`git diff --check` all exited zero. Native reviewer dispatch was unavailable,
+so the fixed-base standards/spec review was performed locally against
+`218d8dd4329292e49eda2eb6834be18d0a25eab0`.
+
+Observation: At 15:24 EDT the accepted source run had a baseline and 41 of 45
+arm DONE receipts. Four arm allocations remained RUNNING, analysis `5595242`
+remained dependency-pending, and no source robustness or final acceptance
+receipt existed. These are progress observations, not scientific results.
+
+Inference: The recovery smoke can start as soon as its already-completed source
+endpoint adapter and the new GPU doctor validate. Most profile evaluations can
+then run immediately while the last four source arms remain the only per-profile
+dependencies and source analysis remains the combined-export dependency.

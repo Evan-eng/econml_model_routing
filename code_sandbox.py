@@ -62,6 +62,20 @@ def build_bwrap_command(
     if device_access:
         for metadata_path in (Path("/sys"), Path("/proc/driver/nvidia")):
             command.extend(["--ro-bind-try", str(metadata_path), str(metadata_path)])
+        command.extend(
+            [
+                "--dir",
+                "/sbin",
+                "--ro-bind-try",
+                "/sbin/ldconfig",
+                "/sbin/ldconfig",
+                "--dir",
+                "/etc",
+                "--ro-bind-try",
+                "/etc/ld.so.cache",
+                "/etc/ld.so.cache",
+            ]
+        )
         for device in sorted(Path("/dev").glob("nvidia*")):
             if device.is_dir():
                 command.extend(["--dir", str(device)])

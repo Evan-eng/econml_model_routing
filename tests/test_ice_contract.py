@@ -396,6 +396,26 @@ class CodeSandboxTests(unittest.TestCase):
         self.assertIn("HF_HOME", command)
         self.assertIn("HF_HUB_OFFLINE", command)
 
+    def test_gpu_sandbox_exposes_the_read_only_dynamic_linker_cache_tool(self) -> None:
+        command = build_bwrap_command(
+            work_dir=Path("/tmp/output"),
+            argv=["/env/bin/lm-eval", "run"],
+            bwrap_path=Path("/usr/bin/bwrap"),
+            device_access=True,
+        )
+
+        triples = [
+            command[index : index + 3] for index in range(len(command) - 2)
+        ]
+        self.assertIn(
+            ["--ro-bind-try", "/sbin/ldconfig", "/sbin/ldconfig"],
+            triples,
+        )
+        self.assertIn(
+            ["--ro-bind-try", "/etc/ld.so.cache", "/etc/ld.so.cache"],
+            triples,
+        )
+
     def test_mbpp_execution_requires_and_uses_bwrap(self) -> None:
         row = {"test_imports": [], "test_list": ["assert add(1, 2) == 3"]}
         completed = mock.Mock(returncode=0, stderr="")
