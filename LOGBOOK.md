@@ -107,3 +107,26 @@ and offline-cache variables. A regression test proves inherited values do not
 cross the command boundary. Nineteen tests, Ruff, Pyright, and Slurm syntax
 checks pass. A new executor release and a new run contract are required; the old
 chain will not be reused.
+
+[2026-08-27 22:37 EDT] GPU sandbox driver-metadata diagnosis
+
+Context: Replacement release `51cfc37c267bc6d63b7b9947e768225c12a0b302`
+was submitted as run
+`qwen3-8b-confirmatory-20260828T023038Z-51cfc37c267b`. Bootstrap and both
+preparation jobs completed, but GPU doctor `5594300` failed because contained
+NVML returned exit 17 without the host NVIDIA driver metadata mounts.
+
+Action: Preserved the failed doctor and bounded diagnostic allocations
+`5594316` through `5594322`, including launcher failure `5594317`. The probes
+showed that read-only `/sys` and `/proc/driver/nvidia` views are required in
+addition to NVIDIA device nodes and libraries. With those views, Slurm's device
+cgroup exposed exactly one allocated H100 inside bubblewrap. No diagnostic
+wrote an experiment artifact.
+
+Result: Added read-only driver metadata mounts to GPU-enabled bubblewrap and
+strengthened the doctor to require the contained `nvidia-smi` count to equal
+`CUDA_VISIBLE_DEVICES`. The network namespace, empty inherited environment,
+read-only inputs, and sole writable candidate/output directory remain intact.
+Nineteen tests, Ruff, Pyright, and Slurm syntax checks pass. The replacement
+chain's downstream work did not start and must be superseded by another exact
+release and fresh run contract.

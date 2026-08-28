@@ -60,6 +60,8 @@ def build_bwrap_command(
             raise SandboxError(f"Invalid inherited environment variable name: {key!r}")
         command.extend(["--unsetenv", key])
     if device_access:
+        for metadata_path in (Path("/sys"), Path("/proc/driver/nvidia")):
+            command.extend(["--ro-bind-try", str(metadata_path), str(metadata_path)])
         for device in sorted(Path("/dev").glob("nvidia*")):
             if device.is_dir():
                 command.extend(["--dir", str(device)])
@@ -183,7 +185,20 @@ def sandbox_doctor(
             gpu = subprocess.run(
                 gpu_command, capture_output=True, check=False, text=True, timeout=10
             )
-            if gpu.returncode or "GPU" not in gpu.stdout:
-                raise SandboxError(f"Bubblewrap CUDA visibility probe failed: {gpu.stderr.strip()}")
+            visible_devices = [
+                value.strip()
+                for value in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")
+                if value.strip()
+            ]
+            gpu_lines = [
+                line for line in gpu.stdout.splitlines() if line.startswith("GPU ")
+            ]
+            if gpu.returncode or len(gpu_lines) != len(visible_devices) or not gpu_lines:
+                raise SandboxError(
+                    "Bubblewrap CUDA visibility probe failed: "
+                    f"returncode={gpu.returncode}, expected={len(visible_devices)}, "
+                    f"observed={len(gpu_lines)}, stdout={gpu.stdout.strip()!r}, "
+                    f"stderr={gpu.stderr.strip()!r}"
+                )
             result["cuda_visible"] = True
         return {"sandbox": "bwrap", "status": "pass", **result}

@@ -276,6 +276,9 @@ class CodeSandboxTests(unittest.TestCase):
             ["--dev-bind", "/dev", "/dev"],
             [command[index : index + 3] for index in range(len(command) - 2)],
         )
+        for path in ("/sys", "/proc/driver/nvidia"):
+            index = command.index(path)
+            self.assertEqual(command[index - 1], "--ro-bind-try")
         for path in ("/env", "/storage/experiment"):
             index = command.index(path)
             self.assertEqual(command[index - 1], "--ro-bind")
