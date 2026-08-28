@@ -823,3 +823,56 @@ passed), `uv lock --check`, shell syntax, ShellCheck, and `git diff --check`.
 Inference: This is another operational containment mismatch, not a scientific
 result. Node-local staging preserves the intended storage policy and avoids
 shared-cache lock contention when up to 46 evaluations fan out concurrently.
+
+[2026-08-28 15:58 EDT] Dataset staging passed and exposed missing offline code_eval metric
+
+Observation: Recovery
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-robustness-recovery-20260828T194913Z-69b14c85a84b`
+under exact release `69b14c85a84b948164b329903f746eb6399d9bcd`
+successfully staged both pinned datasets in node-local scratch. Smoke `5595700`
+loaded Qwen3-8B and its adapter, compiled the Triton CUDA utility, evaluated the
+bounded MATH-500 item, and reached HumanEval metric setup. Evaluate then tried
+to create or download `code_eval` under the read-only shared Hugging Face cache
+and failed with `OSError: [Errno 30] Read-only file system`. No smoke DONE
+receipt or benchmark result was created. Exact receipt-listed dependent and
+waiting jobs `5595698`, `5595699`, and `5595701` through `5595704` were
+cancelled; all completed, failed, and cancelled allocation rows remain in the
+append-only accounting chain.
+
+Action: The recovery now prepares the official `evaluate-metric/code_eval`
+module at pinned revision
+`262b7e74cf29a715d74f8b02ba1d6ef74e432333` in a dedicated bounded-network CPU
+stage after the frozen environment is built. Its receipt binds the recovery
+source release, environment release, exact revision, and SHA-256 digests of
+`code_eval.py` and `execute.py`. Each GPU evaluation copies the prepared
+`evaluate` and `modules` trees, together with only the two pinned dataset
+caches, into a unique writable node-local directory. The whole-process sandbox
+continues to expose the shared model cache, release, source experiment, and
+adapters read-only with networking disabled.
+
+Verification: A local offline probe loaded `code_eval` solely from the prepared
+module cache. New unit tests cover the pinned revision and receipt, runtime
+cache staging, sandbox environment allowlist, and Slurm dependency edge. The
+targeted suite passed 26 tests, Ruff passed, Pyright reported no errors, shell
+syntax passed, and the complete release gate remains pending below.
+
+Inference: The failure was a deterministic missing-input preparation defect,
+not a model, benchmark, OOM, or node result. The accepted source adapters remain
+valid and do not require retraining; a new exact-SHA recovery must bind the
+failed `69b14c85a84b` submission and may reuse all source DONE receipts.
+
+[2026-08-28 16:01 EDT] Offline metric recovery release passed its complete gate
+
+Observation: An exact-environment local probe showed that Evaluate keeps metric
+instance state under `HF_METRICS_CACHE`, separately from its download and module
+caches. With `HF_HOME` pointed at an unwritable location and the three explicit
+cache variables pointed at disposable storage, `evaluate.load("code_eval")`
+loaded the pinned cached module and instantiated `CodeEval` without network or
+writes outside the disposable root. The runtime sandbox now allowlists and sets
+all three paths.
+
+Verification: `uv run ruff check .`, `uv run pyright`, `uv run pytest -q` (59
+passed), `uv lock --check`, `bash -n slurm/*.sbatch slurm/*.sh`, ShellCheck with
+only the expected dynamic-source `SC1091` exclusion, and `git diff --check` all
+exited zero. This verifies the source release locally; it does not yet prove an
+ICE compute-node smoke or a scientific result.

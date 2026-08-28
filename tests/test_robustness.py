@@ -32,6 +32,29 @@ class RobustnessSandboxTests(unittest.TestCase):
             self.assertTrue((staged / "openai___openai_humaneval").is_dir())
             self.assertFalse((staged / "unrelated_large_dataset").exists())
 
+    def test_runtime_cache_stages_datasets_and_pinned_metric_module(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            hf_home = root / "shared"
+            scratch = root / "scratch"
+            scratch.mkdir()
+            for name in robustness.ROBUSTNESS_DATASET_CACHE_DIRS:
+                directory = hf_home / "datasets" / name
+                directory.mkdir(parents=True)
+                (directory / "state.json").write_text("{}\n", encoding="utf-8")
+            for name in ("evaluate", "modules"):
+                directory = hf_home / name
+                directory.mkdir(parents=True)
+                (directory / "metric.py").write_text("# pinned\n", encoding="utf-8")
+
+            staged = robustness.stage_robustness_runtime_cache(hf_home, scratch)
+
+            for name in robustness.ROBUSTNESS_DATASET_CACHE_DIRS:
+                self.assertTrue((staged / "datasets" / name).is_dir())
+            self.assertTrue((staged / "evaluate" / "metric.py").is_file())
+            self.assertTrue((staged / "modules" / "metric.py").is_file())
+            self.assertFalse((staged / "metrics").exists())
+
     def test_recovery_smoke_uses_a_separate_output_namespace(self) -> None:
         experiment = Path("/runs/recovery")
 

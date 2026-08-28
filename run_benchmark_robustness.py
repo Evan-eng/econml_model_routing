@@ -45,6 +45,38 @@ ROBUSTNESS_DATASET_CACHE_DIRS = (
 )
 
 
+def stage_robustness_runtime_cache(hf_home: Path, scratch_root: Path) -> Path:
+    """Stage the pinned datasets and metric module in writable node-local storage."""
+    hf_home = hf_home.resolve()
+    scratch_root = scratch_root.resolve()
+    if not scratch_root.is_dir():
+        raise FileNotFoundError(f"Node-local scratch is unavailable: {scratch_root}")
+    staged = Path(
+        tempfile.mkdtemp(prefix="routing_hf_runtime_", dir=scratch_root)
+    ).resolve()
+    try:
+        datasets = staged / "datasets"
+        datasets.mkdir()
+        for name in ROBUSTNESS_DATASET_CACHE_DIRS:
+            source = hf_home / "datasets" / name
+            if not source.is_dir():
+                raise FileNotFoundError(
+                    f"Pinned robustness dataset cache is missing: {source}"
+                )
+            shutil.copytree(source, datasets / name)
+        for name in ("evaluate", "modules"):
+            source = hf_home / name
+            if not source.is_dir():
+                raise FileNotFoundError(
+                    f"Pinned HumanEval metric cache is missing: {source}"
+                )
+            shutil.copytree(source, staged / name)
+    except BaseException:
+        shutil.rmtree(staged)
+        raise
+    return staged
+
+
 def stage_robustness_dataset_cache(
     shared_cache: Path, scratch_root: Path
 ) -> Path:
@@ -396,8 +428,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "CUDA_VISIBLE_DEVICES",
             "HF_DATASETS_CACHE",
             "HF_DATASETS_OFFLINE",
+            "HF_EVALUATE_CACHE",
             "HF_HOME",
             "HF_HUB_OFFLINE",
+            "HF_METRICS_CACHE",
+            "HF_MODULES_CACHE",
             "LD_LIBRARY_PATH",
             "NVIDIA_VISIBLE_DEVICES",
             "PYTORCH_CUDA_ALLOC_CONF",
@@ -409,6 +444,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     sandbox_environment.setdefault("HF_HOME", str(hf_home))
     sandbox_environment.setdefault("HF_DATASETS_CACHE", str(hf_home / "datasets"))
+    sandbox_environment.setdefault("HF_EVALUATE_CACHE", str(hf_home / "evaluate"))
+    sandbox_environment.setdefault("HF_METRICS_CACHE", str(hf_home / "metrics"))
+    sandbox_environment.setdefault("HF_MODULES_CACHE", str(hf_home / "modules"))
     sandbox_environment.setdefault("HF_DATASETS_OFFLINE", "1")
     sandbox_environment.setdefault("HF_HUB_OFFLINE", "1")
     sandbox_environment.setdefault("TRANSFORMERS_OFFLINE", "1")
@@ -463,17 +501,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.limit is not None:
             inner_command.extend(["--limit", str(args.limit)])
         profile_sandbox_environment = dict(sandbox_environment)
-        staged_dataset_cache: Path | None = None
+        staged_runtime_cache: Path | None = None
         if not args.dry_run:
             scratch_raw = os.environ.get("TMPDIR")
             if not scratch_raw:
                 raise RuntimeError("Robustness evaluation requires node-local TMPDIR")
-            staged_dataset_cache = stage_robustness_dataset_cache(
-                Path(profile_sandbox_environment["HF_DATASETS_CACHE"]),
-                Path(scratch_raw),
+            staged_runtime_cache = stage_robustness_runtime_cache(
+                hf_home, Path(scratch_raw)
             )
             profile_sandbox_environment["HF_DATASETS_CACHE"] = str(
-                staged_dataset_cache
+                staged_runtime_cache / "datasets"
+            )
+            profile_sandbox_environment["HF_EVALUATE_CACHE"] = str(
+                staged_runtime_cache / "evaluate"
+            )
+            profile_sandbox_environment["HF_METRICS_CACHE"] = str(
+                staged_runtime_cache / "metrics"
+            )
+            profile_sandbox_environment["HF_MODULES_CACHE"] = str(
+                staged_runtime_cache / "modules"
             )
         command = sandboxed_lm_eval_command(
             inner_command=inner_command,
@@ -486,7 +532,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             bwrap_path=bwrap_path,
             environment=profile_sandbox_environment,
             writable_paths=(
-                [staged_dataset_cache] if staged_dataset_cache is not None else []
+                [staged_runtime_cache] if staged_runtime_cache is not None else []
             ),
         )
         print(shlex.join(command), flush=True)
@@ -496,8 +542,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             try:
                 return_code = subprocess.run(command, check=False).returncode
             finally:
-                if staged_dataset_cache is not None:
-                    shutil.rmtree(staged_dataset_cache)
+                if staged_runtime_cache is not None:
+                    shutil.rmtree(staged_runtime_cache)
         records.append(
             {
                 "profile": profile_name,

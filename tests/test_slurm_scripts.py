@@ -28,6 +28,11 @@ class IceSlurmScriptTests(unittest.TestCase):
         self.assertIn("aftercorr:${ENDPOINT_GATE_JOB}", submitter)
         self.assertIn("aftercorr:${REMAINING_GATE_JOB}", submitter)
         self.assertIn("afterok:${SMOKE_JOB}", submitter)
+        self.assertIn("METRIC_PREP_JOB", submitter)
+        self.assertIn(
+            "afterok:${METRIC_PREP_JOB}:${DOCTOR_JOB}:${ENDPOINT_GATE_JOB}",
+            submitter,
+        )
         self.assertNotIn("aftercorr:${SOURCE_ENDPOINT_JOB}", submitter)
         self.assertNotIn("aftercorr:${SOURCE_REMAINING_JOB}", submitter)
         self.assertNotIn(":${SOURCE_ANALYSIS_JOB}\"", submitter)
@@ -49,7 +54,11 @@ class IceSlurmScriptTests(unittest.TestCase):
         self.assertIn("--recovery-smoke", smoke)
         self.assertIn("--limit 1", smoke)
         self.assertIn("sacct -X", finalizer)
-        for text in (worker, smoke, finalizer, source_gate, analysis_gate):
+        metric_prep = (
+            ROOT / "slurm" / "robustness_recovery_metric_prep.sbatch"
+        ).read_text(encoding="utf-8")
+        self.assertIn("prepare-code-eval-metric", metric_prep)
+        for text in (worker, smoke, finalizer, source_gate, analysis_gate, metric_prep):
             self.assertNotIn("#SBATCH --account", text)
             self.assertNotIn("#SBATCH --partition", text)
     def test_exploratory_launcher_uses_sparse_aftercorr_array(self) -> None:

@@ -414,6 +414,10 @@ class ExploratoryRobustnessTests(unittest.TestCase):
                     f"{EXTENSION_SHA}:extension-run:"
                     "gpu-sandbox-doctor:bwrap-cuda"
                 )
+                metric_release = (
+                    f"{EXTENSION_SHA}:extension-run:code-eval-metric-prepare:"
+                    f"{recovery.CODE_EVAL_METRIC_REVISION}"
+                )
                 (recovered / "stage_receipts" / "gpu_sandbox.json").write_text(
                     json.dumps(
                         {
@@ -464,6 +468,7 @@ class ExploratoryRobustnessTests(unittest.TestCase):
                             "coordinator_release": EXTENSION_SHA,
                             "input_producer_releases": [
                                 source_gate,
+                                metric_release,
                                 doctor_release,
                                 smoke_ready_release,
                                 source_releases["arm:40"],
@@ -504,6 +509,7 @@ class ExploratoryRobustnessTests(unittest.TestCase):
                                 "coordinator_release": EXTENSION_SHA,
                                 "input_producer_releases": [
                                     source_gate,
+                                    metric_release,
                                     doctor_release,
                                     smoke_release,
                                     source_ready_release,
@@ -524,7 +530,12 @@ class ExploratoryRobustnessTests(unittest.TestCase):
                     "", encoding="utf-8"
                 )
 
-                recovery.finalize_recovery(recovered, export)
+                with mock.patch.object(
+                    recovery,
+                    "validate_code_eval_metric_receipt",
+                    return_value=metric_release,
+                ):
+                    recovery.finalize_recovery(recovered, export)
 
             manifest = json.loads(
                 (export / "PROFILE_MANIFEST.json").read_text(encoding="utf-8")

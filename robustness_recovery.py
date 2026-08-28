@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import importlib
+import os
 import shutil
 import stat
 import time
@@ -27,6 +29,12 @@ from exploratory_robustness import (
 )
 from ice_contract import validate_run_contract
 from ice_pipeline import validated_terminal_release
+
+
+CODE_EVAL_METRIC_REPOSITORY = "evaluate-metric/code_eval"
+CODE_EVAL_METRIC_REVISION = "262b7e74cf29a715d74f8b02ba1d6ef74e432333"
+CODE_EVAL_SCRIPT_SHA256 = "5bf43a92a8548f834396a3a2c0cfcd8b015d10e25bb3c1ed0ef93b6033d9e0a5"
+CODE_EVAL_EXECUTE_SHA256 = "1c905e8de742d67e73f9bf4cd217d8ccd5e327bfc0f8db9d89077d7551e9cdb6"
 
 
 def _validated_job_map(receipt: Mapping[str, Any], label: str) -> dict[str, str]:
@@ -656,6 +664,151 @@ def validate_recovery_source_receipt(
     return receipt
 
 
+def _validated_environment_release(experiment_dir: Path) -> str:
+    """Validate the frozen environment receipt produced by this recovery run."""
+    contract = active_run_contract(experiment_dir)
+    if contract is None:
+        raise RuntimeError("Metric preparation requires a sealed contract")
+    receipt = read_json(experiment_dir / "stage_receipts" / "environment.json")
+    expected = {
+        "stage": "environment",
+        "executor_release": contract["executor_release"],
+        "coordinator_release": contract["coordinator_release"],
+        "dependency_lock_sha256": contract["dependency_lock_sha256"],
+        "run_contract_sha256": sha256_file(experiment_dir / "run_contract.json"),
+        "design_sha256": sha256_file(experiment_dir / "design.json"),
+        "input_producer_releases": [
+            f"pace-code-release:{contract['release_receipt_sha256']}"
+        ],
+    }
+    if any(receipt.get(key) != value for key, value in expected.items()):
+        raise RuntimeError("Recovery environment receipt does not match")
+    release = receipt.get("output_release")
+    if not isinstance(release, str) or not release:
+        raise RuntimeError("Recovery environment receipt has no output release")
+    return release
+
+
+def _code_eval_metric_scripts(hf_home: Path) -> dict[str, dict[str, str]]:
+    """Find the exact pinned metric scripts materialized by Evaluate."""
+    module_root = hf_home / "modules" / "evaluate_modules" / "metrics"
+    candidates: list[tuple[Path, Path]] = []
+    if module_root.is_dir():
+        for code_eval in module_root.glob("evaluate-metric--code_eval/*/code_eval.py"):
+            execute = code_eval.with_name("execute.py")
+            if (
+                execute.is_file()
+                and sha256_file(code_eval) == CODE_EVAL_SCRIPT_SHA256
+                and sha256_file(execute) == CODE_EVAL_EXECUTE_SHA256
+            ):
+                candidates.append((code_eval, execute))
+    if not candidates:
+        raise RuntimeError("Pinned code_eval metric scripts were not materialized")
+    code_eval, execute = sorted(candidates)[-1]
+    return {
+        "code_eval.py": {
+            "path": str(code_eval.relative_to(hf_home)),
+            "sha256": CODE_EVAL_SCRIPT_SHA256,
+        },
+        "execute.py": {
+            "path": str(execute.relative_to(hf_home)),
+            "sha256": CODE_EVAL_EXECUTE_SHA256,
+        },
+    }
+
+
+def prepare_code_eval_metric(experiment_dir: Path, hf_home: Path) -> None:
+    """Download one pinned Evaluate metric and bind its cache to this run."""
+    experiment_dir = experiment_dir.resolve()
+    hf_home = hf_home.resolve()
+    contract = active_run_contract(experiment_dir)
+    if contract is None:
+        raise RuntimeError("Metric preparation requires a sealed contract")
+    plan = read_json(experiment_dir / "recovery_plan.json")
+    source_experiment_dir = Path(str(plan["source_experiment_dir"])).resolve()
+    source_receipt = validate_recovery_source_receipt(
+        experiment_dir, source_experiment_dir
+    )
+    environment_release = _validated_environment_release(experiment_dir)
+    output = experiment_dir / "stage_receipts" / "code_eval_metric.json"
+    if output.exists():
+        raise FileExistsError(f"Refusing to replace metric receipt: {output}")
+    hf_home.mkdir(parents=True, exist_ok=True)
+    cache_environment = {
+        "HF_HOME": str(hf_home),
+        "HF_EVALUATE_CACHE": str(hf_home / "evaluate"),
+        "HF_METRICS_CACHE": str(hf_home / "metrics"),
+        "HF_MODULES_CACHE": str(hf_home / "modules"),
+    }
+    previous = {key: os.environ.get(key) for key in cache_environment}
+    os.environ.update(cache_environment)
+    try:
+        evaluate = importlib.import_module("evaluate")
+        evaluate.load("code_eval", revision=CODE_EVAL_METRIC_REVISION)
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+    scripts = _code_eval_metric_scripts(hf_home)
+    write_json(
+        output,
+        {
+            "completed_at_utc": utc_now(),
+            "repository": CODE_EVAL_METRIC_REPOSITORY,
+            "revision": CODE_EVAL_METRIC_REVISION,
+            "scripts": scripts,
+            **contract_release_fields(
+                experiment_dir,
+                stage="code-eval-metric-prepare",
+                output_identity=CODE_EVAL_METRIC_REVISION,
+                input_producer_releases=[
+                    environment_release,
+                    str(source_receipt["output_release"]),
+                ],
+            ),
+            **result_fingerprints(experiment_dir),
+        },
+    )
+
+
+def validate_code_eval_metric_receipt(experiment_dir: Path, hf_home: Path) -> str:
+    """Validate the pinned metric receipt and cached source before GPU work."""
+    experiment_dir = experiment_dir.resolve()
+    hf_home = hf_home.resolve()
+    contract = active_run_contract(experiment_dir)
+    if contract is None:
+        raise RuntimeError("Metric validation requires a sealed contract")
+    plan = read_json(experiment_dir / "recovery_plan.json")
+    source_receipt = validate_recovery_source_receipt(
+        experiment_dir, Path(str(plan["source_experiment_dir"])).resolve()
+    )
+    environment_release = _validated_environment_release(experiment_dir)
+    receipt = read_json(experiment_dir / "stage_receipts" / "code_eval_metric.json")
+    expected_release = (
+        f"{contract['executor_release']}:{contract['run_id']}:"
+        f"code-eval-metric-prepare:{CODE_EVAL_METRIC_REVISION}"
+    )
+    expected = {
+        "stage": "code-eval-metric-prepare",
+        "executor_release": contract["executor_release"],
+        "coordinator_release": contract["coordinator_release"],
+        "input_producer_releases": [
+            environment_release,
+            source_receipt["output_release"],
+        ],
+        "output_release": expected_release,
+        "repository": CODE_EVAL_METRIC_REPOSITORY,
+        "revision": CODE_EVAL_METRIC_REVISION,
+        "scripts": _code_eval_metric_scripts(hf_home),
+        **result_fingerprints(experiment_dir),
+    }
+    if any(receipt.get(key) != value for key, value in expected.items()):
+        raise RuntimeError("Pinned code_eval metric receipt does not match")
+    return expected_release
+
+
 def validate_recovery_runtime_gates(
     experiment_dir: Path,
     source_experiment_dir: Path,
@@ -673,6 +826,8 @@ def validate_recovery_runtime_gates(
         experiment_dir, source_experiment_dir
     )
     fingerprints = result_fingerprints(experiment_dir)
+    hf_home = Path(os.environ.get("HF_HOME", experiment_dir / "hf_cache"))
+    metric_release = validate_code_eval_metric_receipt(experiment_dir, hf_home)
     doctor_path = experiment_dir / "stage_receipts" / "gpu_sandbox.json"
     doctor = read_json(doctor_path)
     doctor_release = (
@@ -699,7 +854,7 @@ def validate_recovery_runtime_gates(
         experiment_dir, source_experiment_dir, recovery_profile
     )
     if recovery_smoke:
-        return [doctor_release, source_ready_release]
+        return [metric_release, doctor_release, source_ready_release]
     source_design = read_json(source_experiment_dir / "design.json")
     mixture, seed = grid_arms(source_design)[40]
     smoke_profile = profile_output_name(mixture, seed)
@@ -732,6 +887,7 @@ def validate_recovery_runtime_gates(
         "coordinator_release": contract["coordinator_release"],
         "input_producer_releases": [
             source_receipt["output_release"],
+            metric_release,
             doctor_release,
             smoke_source_ready_release,
             source_release,
@@ -745,7 +901,7 @@ def validate_recovery_runtime_gates(
     smoke_results = smoke_done_path.parent / "results.json"
     if smoke.get("results_sha256") != sha256_file(smoke_results):
         raise RuntimeError("Recovery adapter smoke result digest does not match")
-    return [doctor_release, smoke_release, source_ready_release]
+    return [metric_release, doctor_release, smoke_release, source_ready_release]
 
 
 def _copy_required(source: Path, destination: Path) -> None:
@@ -1086,6 +1242,9 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--prior-recovery-experiment-dir")
     source = sub.add_parser("source-receipt")
     source.add_argument("--experiment-dir", required=True)
+    metric = sub.add_parser("prepare-code-eval-metric")
+    metric.add_argument("--experiment-dir", required=True)
+    metric.add_argument("--hf-home", required=True)
     wait_source = sub.add_parser("wait-source")
     wait_source.add_argument("--experiment-dir", required=True)
     wait_source.add_argument("--recovery-profile", required=True)
@@ -1117,6 +1276,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     elif args.command == "source-receipt":
         write_recovery_source_receipt(experiment_dir)
+    elif args.command == "prepare-code-eval-metric":
+        prepare_code_eval_metric(experiment_dir, Path(args.hf_home))
     elif args.command == "wait-source":
         wait_for_source_profile(
             experiment_dir,

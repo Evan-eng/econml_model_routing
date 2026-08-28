@@ -134,6 +134,10 @@ fi
 BOOTSTRAP_JOB="$(submit_job --export="${common_exports}" \
   --output="${LOG_DIR}/bootstrap_%j.out" --error="${LOG_DIR}/bootstrap_%j.err" \
   "${RELEASE_DIR}/slurm/bootstrap.sbatch")"
+METRIC_PREP_JOB="$(submit_job --dependency="afterok:${BOOTSTRAP_JOB}" \
+  --export="${common_exports}" --output="${LOG_DIR}/metric_prep_%j.out" \
+  --error="${LOG_DIR}/metric_prep_%j.err" \
+  "${RELEASE_DIR}/slurm/robustness_recovery_metric_prep.sbatch")"
 DOCTOR_JOB="$(submit_job --dependency="afterok:${BOOTSTRAP_JOB}" \
   "${gpu_options[@]}" --export="${common_exports}" \
   --output="${LOG_DIR}/gpu_doctor_%j.out" --error="${LOG_DIR}/gpu_doctor_%j.err" \
@@ -158,7 +162,7 @@ ANALYSIS_GATE_JOB="$(submit_job --dependency="afterok:${BOOTSTRAP_JOB}" \
   --error="${LOG_DIR}/source_analysis_gate_%j.err" \
   "${RELEASE_DIR}/slurm/robustness_recovery_analysis_gate.sbatch")"
 SMOKE_JOB="$(submit_job \
-  --dependency="afterok:${DOCTOR_JOB}:${ENDPOINT_GATE_JOB}" \
+  --dependency="afterok:${METRIC_PREP_JOB}:${DOCTOR_JOB}:${ENDPOINT_GATE_JOB}" \
   "${gpu_options[@]}" --export="${common_exports}" \
   --output="${LOG_DIR}/smoke_%j.out" --error="${LOG_DIR}/smoke_%j.err" \
   "${RELEASE_DIR}/slurm/robustness_recovery_smoke.sbatch")"
@@ -185,7 +189,7 @@ if [[ "${PRIOR_RECOVERY_ACCOUNT_JOB_IDS}" != "none" ]]; then
   account_job_ids+=("${PRIOR_RECOVERY_ACCOUNT_JOB_IDS}")
 fi
 account_job_ids+=(
-  "${BOOTSTRAP_JOB}" "${DOCTOR_JOB}" "${BASELINE_GATE_JOB}"
+  "${BOOTSTRAP_JOB}" "${METRIC_PREP_JOB}" "${DOCTOR_JOB}" "${BASELINE_GATE_JOB}"
   "${ENDPOINT_GATE_JOB}" "${REMAINING_GATE_JOB}" "${ANALYSIS_GATE_JOB}"
   "${SMOKE_JOB}" "${BASELINE_JOB}" "${ENDPOINT_JOB}" "${REMAINING_JOB}"
 )
@@ -213,7 +217,9 @@ python3 "${RELEASE_DIR}/ice_pipeline.py" submission-receipt \
   --output "${EXPERIMENT_DIR}/stage_receipts/submission.json" \
   "${submission_inputs[@]}" \
   --pre-side-effect-release-gate submit_robustness_recovery.sh \
-  --job "bootstrap=${BOOTSTRAP_JOB}" --job "gpu_doctor=${DOCTOR_JOB}" \
+  --job "bootstrap=${BOOTSTRAP_JOB}" \
+  --job "code_eval_metric_prep=${METRIC_PREP_JOB}" \
+  --job "gpu_doctor=${DOCTOR_JOB}" \
   --job "baseline_source_gate=${BASELINE_GATE_JOB}" \
   --job "endpoint_source_gate=${ENDPOINT_GATE_JOB}" \
   --job "remaining_source_gate=${REMAINING_GATE_JOB}" \

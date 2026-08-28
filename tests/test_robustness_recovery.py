@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 import robustness_recovery as recovery
 
@@ -28,6 +32,18 @@ class RobustnessRecoveryTests(unittest.TestCase):
                 ["source-receipt", "--experiment-dir", "/recovered"]
             ).command,
             "source-receipt",
+        )
+        self.assertEqual(
+            parser.parse_args(
+                [
+                    "prepare-code-eval-metric",
+                    "--experiment-dir",
+                    "/recovered",
+                    "--hf-home",
+                    "/cache",
+                ]
+            ).command,
+            "prepare-code-eval-metric",
         )
         self.assertEqual(
             parser.parse_args(
@@ -100,6 +116,68 @@ class RobustnessRecoveryTests(unittest.TestCase):
         self.assertEqual(recovery.recovery_profile_selector(design, "44"), "1.0:101")
         with self.assertRaisesRegex(IndexError, "outside"):
             recovery.recovery_profile_selector(design, "45")
+
+    def test_metric_preparation_pins_revision_and_writes_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            experiment = root / "run"
+            source = root / "source"
+            hf_home = root / "cache"
+            experiment.mkdir()
+            source.mkdir()
+            for name in ("design.json", "provenance.json"):
+                (experiment / name).write_text("{}\n", encoding="utf-8")
+            (experiment / "recovery_plan.json").write_text(
+                json.dumps({"source_experiment_dir": str(source)}), encoding="utf-8"
+            )
+            contract = {
+                "executor_release": "a" * 40,
+                "coordinator_release": "a" * 40,
+                "run_id": "recovery-run",
+            }
+            (experiment / "run_contract.json").write_text(
+                json.dumps(contract), encoding="utf-8"
+            )
+            scripts = {
+                "code_eval.py": {"path": "modules/code_eval.py", "sha256": "code"},
+                "execute.py": {"path": "modules/execute.py", "sha256": "exec"},
+            }
+            fake_evaluate = mock.Mock()
+            with (
+                mock.patch.object(recovery, "active_run_contract", return_value=contract),
+                mock.patch.object(
+                    recovery,
+                    "validate_recovery_source_receipt",
+                    return_value={"output_release": "source-release"},
+                ),
+                mock.patch.object(
+                    recovery,
+                    "_validated_environment_release",
+                    return_value="environment-release",
+                ),
+                mock.patch.object(
+                    recovery, "_code_eval_metric_scripts", return_value=scripts
+                ),
+                mock.patch.object(
+                    recovery.importlib, "import_module", return_value=fake_evaluate
+                ),
+            ):
+                recovery.prepare_code_eval_metric(experiment, hf_home)
+
+            fake_evaluate.load.assert_called_once_with(
+                "code_eval", revision=recovery.CODE_EVAL_METRIC_REVISION
+            )
+            receipt = json.loads(
+                (experiment / "stage_receipts" / "code_eval_metric.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(receipt["revision"], recovery.CODE_EVAL_METRIC_REVISION)
+            self.assertEqual(receipt["scripts"], scripts)
+            self.assertEqual(
+                receipt["input_producer_releases"],
+                ["environment-release", "source-release"],
+            )
 
 
 if __name__ == "__main__":
