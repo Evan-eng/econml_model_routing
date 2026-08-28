@@ -34,6 +34,8 @@ class IceSlurmScriptTests(unittest.TestCase):
         self.assertIn("%42", submitter)
         self.assertIn("SOURCE_ACCOUNT_JOB_IDS", submitter)
         self.assertIn("SUPERSEDED_ACCOUNT_JOB_IDS", submitter)
+        self.assertIn("PRIOR_RECOVERY_RUN_ID", submitter)
+        self.assertIn("PRIOR_RECOVERY_ACCOUNT_JOB_IDS", submitter)
         source_gate = (
             ROOT / "slurm" / "robustness_recovery_source_gate.sbatch"
         ).read_text(encoding="utf-8")

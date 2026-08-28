@@ -755,3 +755,38 @@ Inference: The dependency rejection was a launcher/scheduler integration
 failure, not an experiment or model result. The accepted source artifacts and
 the failed extension accounting remain valid inputs to a new exact-SHA
 replacement recovery run.
+
+[2026-08-28 15:40 EDT] Adapter smoke exposed linker-alias sandbox dependency
+
+Observation: Receipt-gated recovery
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-robustness-recovery-20260828T193323Z-7674d9170f53`
+submitted successfully under exact release
+`7674d9170f5311884e59748148fcdad3562cfcb7`. Bootstrap and the new GPU doctor
+completed, 42 source-profile gates emitted exact readiness receipts, four
+source-profile gates waited on the four unfinished source arms, and adapter
+smoke `5595549` loaded all five Qwen3-8B checkpoint shards and selected CUDA.
+
+Observation: During PEFT adapter injection, Triton compiled its CUDA utility
+with `/usr/bin/gcc`. GCC then failed with `collect2: fatal error: cannot find
+'ld'`. On ICE, `/usr/bin/ld` is a symlink to `/etc/alternatives/ld`, which is
+itself a symlink to the already-visible `/usr/bin/ld.bfd`. The sandbox exposed
+`/usr` but not the single `/etc/alternatives/ld` link. Smoke exited 1 without a
+DONE receipt. Dependent evaluation jobs never ran. The four waiting source
+gates, analysis gate, baseline/array evaluations, and finalizer were cancelled
+by exact receipt-listed IDs; completed gates and failed smoke remain retained
+for accounting.
+
+Action: The GPU sandbox now exposes only `/etc/alternatives/ld` read-only in
+addition to the previously added read-only `/sbin/ldconfig` and
+`/etc/ld.so.cache`. The next recovery plan and source receipt also bind the
+failed `7674d9170f53` recovery submission, job map, failure class, and receipt
+digest, and its allocation rows are included in combined accounting.
+
+Verification: The new linker regression test failed before the correction and
+passed afterward. The complete release gate then passed `uv run ruff check .`,
+`uv run pyright`, `uv run pytest -q` (55 passed), `uv lock --check`, shell
+syntax, ShellCheck, and `git diff --check`.
+
+Inference: This was a second deterministic sandbox integration failure, not a
+model, benchmark, OOM, or node result. Reusing release `7674d9170f53` would
+reproduce it; the accepted source adapters still do not require retraining.

@@ -415,6 +415,14 @@ class CodeSandboxTests(unittest.TestCase):
             ["--ro-bind-try", "/etc/ld.so.cache", "/etc/ld.so.cache"],
             triples,
         )
+        self.assertIn(
+            [
+                "--ro-bind-try",
+                "/etc/alternatives/ld",
+                "/etc/alternatives/ld",
+            ],
+            triples,
+        )
 
     def test_mbpp_execution_requires_and_uses_bwrap(self) -> None:
         row = {"test_imports": [], "test_list": ["assert add(1, 2) == 3"]}

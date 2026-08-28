@@ -276,11 +276,17 @@ def initialize_recovery(
     source_experiment_dir: Path,
     superseded_experiment_dir: Path,
     experiment_dir: Path,
+    prior_recovery_experiment_dir: Path | None = None,
 ) -> None:
     """Create immutable recovery inputs after validating source and failed run."""
     source_experiment_dir = source_experiment_dir.resolve()
     superseded_experiment_dir = superseded_experiment_dir.resolve()
     experiment_dir = experiment_dir.resolve()
+    prior_recovery_experiment_dir = (
+        prior_recovery_experiment_dir.resolve()
+        if prior_recovery_experiment_dir is not None
+        else None
+    )
     source = validated_source_run(source_experiment_dir)
     source_contract = source["contract"]
     superseded_contract_path = superseded_experiment_dir / "run_contract.json"
@@ -341,6 +347,39 @@ def initialize_recovery(
         raise FileExistsError(f"Refusing to replace recovery directory: {experiment_dir}")
     source_jobs = _validated_job_map(source["submission"], "Source")
     superseded_jobs = _validated_job_map(superseded_submission, "Superseded")
+    prior_recovery: dict[str, object] | None = None
+    if prior_recovery_experiment_dir is not None:
+        prior_contract_path = prior_recovery_experiment_dir / "run_contract.json"
+        prior_contract = read_json(prior_contract_path)
+        validate_run_contract(
+            prior_contract_path,
+            expected_release=str(prior_contract.get("executor_release", "")),
+            expected_experiment_dir=prior_recovery_experiment_dir,
+        )
+        prior_submission_path = (
+            prior_recovery_experiment_dir / "stage_receipts" / "submission.json"
+        )
+        prior_submission = read_json(prior_submission_path)
+        expected_prior = {
+            "stage": "submission",
+            "run_id": prior_contract["run_id"],
+            "executor_release": prior_contract["executor_release"],
+            "coordinator_release": prior_contract["coordinator_release"],
+        }
+        if any(
+            prior_submission.get(key) != value
+            for key, value in expected_prior.items()
+        ):
+            raise RuntimeError("Prior recovery submission receipt does not match")
+        prior_recovery = {
+            "experiment_dir": str(prior_recovery_experiment_dir),
+            "run_id": prior_contract["run_id"],
+            "executor_release": prior_contract["executor_release"],
+            "submission_sha256": sha256_file(prior_submission_path),
+            "submission_release": prior_submission["output_release"],
+            "jobs": _validated_job_map(prior_submission, "Prior recovery"),
+            "failure_class": "sandbox-missing-linker-alternative",
+        }
     required_jobs = ("full_baseline", "endpoint_array", "remaining_array", "analysis")
     selected_jobs: dict[str, str] = {}
     for name in required_jobs:
@@ -384,6 +423,7 @@ def initialize_recovery(
                 superseded_experiment_dir / "stage_receipts" / "source.json"
             ),
             "failure_class": "sandbox-missing-ldconfig",
+            "prior_recovery": prior_recovery,
             "profiles": recovery_profile_roster(design),
         },
     )
@@ -453,6 +493,18 @@ def write_recovery_source_receipt(experiment_dir: Path) -> None:
             str(plan["supersedes_submission_release"]),
         ]
     )
+    prior_recovery = plan.get("prior_recovery")
+    if isinstance(prior_recovery, dict):
+        prior_submission = (
+            Path(str(prior_recovery["experiment_dir"]))
+            / "stage_receipts"
+            / "submission.json"
+        )
+        if sha256_file(prior_submission) != prior_recovery.get(
+            "submission_sha256"
+        ):
+            raise RuntimeError("Prior recovery submission digest does not match")
+        inputs.append(str(prior_recovery["submission_release"]))
     output = experiment_dir / "stage_receipts" / "source.json"
     if output.exists():
         raise FileExistsError(f"Refusing to replace recovery source receipt: {output}")
@@ -476,6 +528,22 @@ def write_recovery_source_receipt(experiment_dir: Path) -> None:
                 "supersedes_submission_sha256"
             ],
             "failure_class": plan["failure_class"],
+            **(
+                {
+                    "prior_recovery_run_id": prior_recovery["run_id"],
+                    "prior_recovery_executor_release": prior_recovery[
+                        "executor_release"
+                    ],
+                    "prior_recovery_submission_sha256": prior_recovery[
+                        "submission_sha256"
+                    ],
+                    "prior_recovery_failure_class": prior_recovery[
+                        "failure_class"
+                    ],
+                }
+                if isinstance(prior_recovery, dict)
+                else {}
+            ),
             "profiles": 46,
             **contract_release_fields(
                 experiment_dir,
@@ -530,6 +598,22 @@ def validate_recovery_source_receipt(
         ),
         "failure_class": "sandbox-missing-ldconfig",
         "profiles": 46,
+        **(
+            {
+                "prior_recovery_run_id": plan["prior_recovery"]["run_id"],
+                "prior_recovery_executor_release": plan["prior_recovery"][
+                    "executor_release"
+                ],
+                "prior_recovery_submission_sha256": plan["prior_recovery"][
+                    "submission_sha256"
+                ],
+                "prior_recovery_failure_class": plan["prior_recovery"][
+                    "failure_class"
+                ],
+            }
+            if isinstance(plan.get("prior_recovery"), dict)
+            else {}
+        ),
         **result_fingerprints(experiment_dir),
     }
     if any(receipt.get(key) != value for key, value in expected.items()):
@@ -553,6 +637,18 @@ def validate_recovery_source_receipt(
             str(plan["supersedes_submission_release"]),
         ]
     )
+    prior_recovery = plan.get("prior_recovery")
+    if isinstance(prior_recovery, dict):
+        prior_submission_path = (
+            Path(str(prior_recovery["experiment_dir"]))
+            / "stage_receipts"
+            / "submission.json"
+        )
+        if sha256_file(prior_submission_path) != prior_recovery.get(
+            "submission_sha256"
+        ):
+            raise RuntimeError("Prior recovery submission digest does not match")
+        expected_inputs.append(str(prior_recovery["submission_release"]))
     if receipt.get("input_producer_releases") != expected_inputs:
         raise RuntimeError("Recovery source receipt inputs do not match")
     if not isinstance(receipt.get("output_release"), str):
@@ -987,6 +1083,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--source-experiment-dir", required=True)
     init.add_argument("--superseded-experiment-dir", required=True)
     init.add_argument("--experiment-dir", required=True)
+    init.add_argument("--prior-recovery-experiment-dir")
     source = sub.add_parser("source-receipt")
     source.add_argument("--experiment-dir", required=True)
     wait_source = sub.add_parser("wait-source")
@@ -1012,6 +1109,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             Path(args.source_experiment_dir),
             Path(args.superseded_experiment_dir),
             experiment_dir,
+            (
+                Path(args.prior_recovery_experiment_dir)
+                if args.prior_recovery_experiment_dir
+                else None
+            ),
         )
     elif args.command == "source-receipt":
         write_recovery_source_receipt(experiment_dir)

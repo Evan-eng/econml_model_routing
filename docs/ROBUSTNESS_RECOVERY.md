@@ -28,6 +28,11 @@ directories remain read-only or absent, and each generated-code evaluation
 still runs in a disposable node-local working directory with the existing
 resource limits.
 
+The first corrected smoke then exposed a second missing system input: the
+`/usr/bin/ld` symlink resolves through `/etc/alternatives/ld`. The next sealed
+recovery therefore exposes that single linker alias read-only as well. It does
+not expose the rest of `/etc/alternatives` or make any system path writable.
+
 ## Execution contract
 
 The recovery has a new exact-SHA run contract and output tree. Its source

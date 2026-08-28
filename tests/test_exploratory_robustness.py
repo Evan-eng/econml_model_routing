@@ -187,6 +187,48 @@ def write_result(
 
 
 class ExploratoryRobustnessTests(unittest.TestCase):
+    def test_recovery_initializer_binds_the_prior_failed_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = create_source_run(root)
+            failed = root / "artifact" / "runs" / "failed-extension"
+            exploratory.initialize_extension(source, failed)
+            failed_contract = create_extension_contract(root, failed)
+            with mock.patch.dict(os.environ, {"EXECUTOR_RELEASE": EXTENSION_SHA}):
+                exploratory.write_source_receipt(failed, source)
+                write_submission_receipt(
+                    contract_path=failed_contract,
+                    output_path=failed / "stage_receipts" / "submission.json",
+                    jobs=["profiles=700", "finalize=701"],
+                    input_producer_releases=["failed-release-input"],
+                    pre_side_effect_release_gate="failed-extension.sh",
+                )
+            prior = root / "artifact" / "runs" / "prior-recovery"
+            recovery.initialize_recovery(source, failed, prior)
+            prior_contract = create_extension_contract(root, prior)
+            with mock.patch.dict(os.environ, {"EXECUTOR_RELEASE": EXTENSION_SHA}):
+                recovery.write_recovery_source_receipt(prior)
+                write_submission_receipt(
+                    contract_path=prior_contract,
+                    output_path=prior / "stage_receipts" / "submission.json",
+                    jobs=["smoke=800", "finalize=801"],
+                    input_producer_releases=["prior-release-input"],
+                    pre_side_effect_release_gate="prior-recovery.sh",
+                )
+            recovered = root / "artifact" / "runs" / "recovered"
+
+            recovery.initialize_recovery(source, failed, recovered, prior)
+
+            plan = json.loads(
+                (recovered / "recovery_plan.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(plan["prior_recovery"]["run_id"], "extension-run")
+            self.assertEqual(
+                plan["prior_recovery"]["failure_class"],
+                "sandbox-missing-linker-alternative",
+            )
+            self.assertEqual(plan["prior_recovery"]["jobs"]["smoke"], "800")
+
     def test_recovery_initializer_binds_source_jobs_and_failed_extension(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

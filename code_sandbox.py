@@ -74,6 +74,11 @@ def build_bwrap_command(
                 "--ro-bind-try",
                 "/etc/ld.so.cache",
                 "/etc/ld.so.cache",
+                "--dir",
+                "/etc/alternatives",
+                "--ro-bind-try",
+                "/etc/alternatives/ld",
+                "/etc/alternatives/ld",
             ]
         )
         for device in sorted(Path("/dev").glob("nvidia*")):
