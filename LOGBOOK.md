@@ -1266,3 +1266,54 @@ Inference: One final short CPU replacement is required for a coherent receipt,
 analysis, manifest, read-only export, and complete append-only allocation
 ledger. Corrected MBPP point estimates are already scientifically available
 but remain provisional until that final accounting gate passes.
+
+[2026-08-28 19:51 EDT] Confirmatory and all-profile robustness experiment accepted
+
+Observation: Final release
+`510fd8f85a9b21950dbb6ea9e5f45a94b6e39133` completed run
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-mbpp-rescore-20260828T233734Z-510fd8f85a9b`.
+All 46 profile receipts and finalizer `5596556` completed with exit code 0.
+Independent reconstruction validated the source, environment, submission,
+exact scoring-path doctor, every profile, corrected-MATH parent, final receipt,
+and read-only export. The accepted manifest digest is
+`f31232b36ef4f70000e0614a966138a9b095722854bcac454022fa7ca8519e26`;
+the nested corrected-MATH manifest digest is
+`ec93fb4c06d0580db915e0d3580a0c8cbc129747d15dfbda818de48cdf8e3f90`.
+
+Observation: The final allocation-only ledger contains 288 rows across the
+active and all superseded MBPP attempts: 247 COMPLETED, 36 FAILED, and 5
+CANCELLED. It records zero GPU hours for the CPU-only correction. The accepted
+export and every descendant have zero writable permission bits.
+
+Observation: A second complete execution reproduced all 46 per-sample files
+byte-for-byte and all 46 corrected metric payloads after excluding only the
+run-specific source-ready release field. Every analysis table was byte-for-byte
+identical; `analysis_summary.json` differed only in `analyzed_at_utc`.
+
+Observation: The preregistered baseline and seed-11 endpoints, reported as
+GSM8K / corrected MBPP / corrected MATH-500 sensitivity interval / HumanEval,
+are: baseline 89.386 / 6.226 / 22.2-22.4 / 84.756 percent; z=0 32.904 /
+4.669 / 14.6-14.8 / 70.732; z=0.5 72.782 / 4.669 / 29.0-29.2 / 71.951;
+and z=1 70.584 / 5.837 / 29.4 / 78.049. Across all five seeds, the largest
+mean in each adapted grid was z=0.125 for GSM8K at 72.631 percent, z=0.875 for
+MBPP at 5.603 percent, and z=1 for corrected MATH-500 and HumanEval at 29.877
+and 76.829 percent respectively.
+
+Observation: The locked 2,000-bootstrap analysis estimated the mathematical
+frontier stationary point at z=0.624 with percentile interval [0.591, 0.660].
+The math curvature parameter was positive with interval [0.790, 1.536], while
+the code curvature interval [-0.119, 0.059] included zero. Math endpoint gain
+was positive in all five seeds; corrected MBPP endpoint gain was positive in
+two of five.
+
+Inference: Controlled post-training improves the harder MATH-500 frontier but
+does not improve the code frontier and reduces the unadapted model's GSM8K,
+MBPP, and HumanEval performance. These results characterize the frozen
+post-training intervention only; they do not identify provider R&D response or
+equilibrium behavior.
+
+Observation: A compact 19 MB, 440-file copy was preserved off ICE under
+`artifacts/accepted/qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-mbpp-rescore-20260828T233734Z-510fd8f85a9b`.
+Its read-only compact manifest verifies and has SHA-256
+`067baa4575df0f3b2b4a70249c94a46e48ec6a1c82a38069709c9d604bd707e0`.
+The full 196 MB accepted export remains on ICE.
