@@ -570,3 +570,54 @@ receipt existed yet.
 Inference: Checkpoint completeness is strong progress evidence but not terminal
 acceptance. Endpoint report and robustness remain correctly blocked until the
 baseline and three endpoint evaluations emit reconciled DONE receipts.
+
+[2026-08-28 14:18 EDT] AUTHORITY all-profile exploratory robustness extension
+
+goal: Evaluate MATH-500 and HumanEval for the 42 nonconfirmatory adapters and
+join them with the four preregistered robustness profiles without altering or
+blocking the confirmatory run.
+
+repo_publish: Allowed on topic branch `glenn/ice-confirmatory-24h`; default and
+protected branches remain prohibited.
+
+slurm_submit: Allowed for one sealed 42-task sparse one-HX00-GPU array, its
+environment bootstrap, compute-node CUDA sandbox doctor, receipt-bound
+finalizer, and bounded infrastructure recovery with at most three attempts.
+
+deploy: Exact-SHA release through `pace-code-release` only, with
+executor_release equal to coordinator_release. The source input producer is
+active confirmatory run
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c`; its executor remains
+`c3cb569cf51c3f53a3c7492388c7183c9f91c6df`.
+
+decisions_consumed: The user explicitly authorized the 42-profile robustness
+extension on top of the existing work. The four original profiles remain
+confirmatory; the other 42 are exploratory. Matching-task `aftercorr`
+dependencies and maximum 42-way evaluation concurrency are authorized.
+
+boundaries: The extension uses a separate run contract, artifacts, manifest,
+ledger, and export. It must not overwrite, cancel, delay, reinterpret, or
+become a dependency of the confirmatory run. Jobs outside the source and
+extension submission receipts remain untouched.
+
+[2026-08-28 14:37 EDT] All-profile extension implementation verified
+
+Observation: The extension selects exactly sparse grid indices
+`1-19,21-39,41-44`, preserving the original baseline and seed-11 endpoint
+profiles as the four confirmatory robustness results. Each extension task
+waits on its matching source array task with `aftercorr`, validates the sealed
+source and extension role tuple, and writes only to the extension run root.
+The finalizer requires 42 exploratory receipts and four confirmatory receipts,
+records allocation-only `sacct -X` rows, and emits a separate read-only
+46-profile manifest and export.
+
+Verification: `uv run ruff check .`, `uv run pyright`, `uv run pytest -q`
+(44 passed), `uv lock --check`, `git diff --check`, `bash -n slurm/*.sbatch
+slurm/*.sh`, and ShellCheck with only the expected dynamic-source `SC1091`
+suppression all exited zero. Native independent reviewer dispatch was
+unavailable in this session, so the fixed-base standards/spec review was
+performed locally against `a7be3e8f512df92bf3ad3b5ff318d0cbb486c094`.
+
+Inference: The implementation is ready for topic-branch publication, exact-SHA
+sealing, and submission. No cluster execution or scientific result is implied
+by these local gates.

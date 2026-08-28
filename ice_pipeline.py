@@ -88,11 +88,25 @@ def write_accounting(raw_path: Path, output_dir: Path) -> None:
 
 
 def write_submission_receipt(
-    *, contract_path: Path, output_path: Path, jobs: Sequence[str]
+    *,
+    contract_path: Path,
+    output_path: Path,
+    jobs: Sequence[str],
+    input_producer_releases: Sequence[str] | None = None,
+    pre_side_effect_release_gate: str = "submit_ice_confirmatory.sh",
 ) -> None:
     if output_path.exists():
         raise FileExistsError(f"Refusing to replace submission receipt: {output_path}")
     contract = read_json(contract_path)
+    inputs = (
+        list(input_producer_releases)
+        if input_producer_releases is not None
+        else [f"pace-code-release:{contract['release_receipt_sha256']}"]
+    )
+    if not inputs or any(not value for value in inputs):
+        raise ValueError("Submission receipt requires input producer releases")
+    if not pre_side_effect_release_gate:
+        raise ValueError("Submission receipt requires a pre-side-effect release gate")
     parsed: dict[str, str] = {}
     for job in jobs:
         if "=" not in job:
@@ -109,9 +123,9 @@ def write_submission_receipt(
             "stage": "submission",
             "executor_release": contract["executor_release"],
             "coordinator_release": contract["coordinator_release"],
-            "input_producer_releases": [f"pace-code-release:{contract['release_receipt_sha256']}"],
+            "input_producer_releases": inputs,
             "dual_release_policy": "none",
-            "pre_side_effect_release_gate": "submit_ice_confirmatory.sh",
+            "pre_side_effect_release_gate": pre_side_effect_release_gate,
             "output_release": (
                 f"{contract['executor_release']}:{contract['run_id']}:submission:chain"
             ),
@@ -385,6 +399,11 @@ def build_parser() -> argparse.ArgumentParser:
     submission.add_argument("--contract", required=True)
     submission.add_argument("--output", required=True)
     submission.add_argument("--job", action="append", default=[])
+    submission.add_argument("--input-producer-release", action="append")
+    submission.add_argument(
+        "--pre-side-effect-release-gate",
+        default="submit_ice_confirmatory.sh",
+    )
     status = sub.add_parser("status-snapshot")
     status.add_argument("--experiment-dir", required=True)
     status.add_argument("--label", required=True)
@@ -400,7 +419,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_accounting(Path(args.raw), Path(args.output_dir))
     elif args.command == "submission-receipt":
         write_submission_receipt(
-            contract_path=Path(args.contract), output_path=Path(args.output), jobs=args.job
+            contract_path=Path(args.contract),
+            output_path=Path(args.output),
+            jobs=args.job,
+            input_producer_releases=args.input_producer_release,
+            pre_side_effect_release_gate=args.pre_side_effect_release_gate,
         )
     elif args.command == "status-snapshot":
         write_status_snapshot(Path(args.experiment_dir), args.label)

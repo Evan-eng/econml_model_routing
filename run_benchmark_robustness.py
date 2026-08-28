@@ -16,6 +16,7 @@ from typing import Mapping, Sequence
 from capability_mixture_experiment import (
     active_run_contract,
     contract_release_fields,
+    grid_arms,
     read_json,
     result_fingerprints,
     sha256_file,
@@ -23,6 +24,11 @@ from capability_mixture_experiment import (
     write_json,
 )
 from code_sandbox import build_bwrap_command, require_bwrap
+from exploratory_robustness import (
+    CONFIRMATORY_PROFILE_INDICES,
+    validate_extension_source_receipt,
+    validated_source_run,
+)
 
 
 DEFAULT_TASKS = "hendrycks_math500,humaneval_instruct"
@@ -83,7 +89,7 @@ def sandboxed_lm_eval_command(
     )
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Evaluate the baseline and selected adapters with lm-eval. By default, "
@@ -92,12 +98,22 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--experiment-dir", required=True)
     parser.add_argument("--tasks", default=DEFAULT_TASKS)
-    parser.add_argument(
+    profile_selection = parser.add_mutually_exclusive_group()
+    profile_selection.add_argument(
         "--profiles",
         help=(
             "comma-separated profiles: baseline or MIXTURE:SEED. "
             "Default: baseline and z={0,0.5,1} for the first seed."
         ),
+    )
+    profile_selection.add_argument(
+        "--profile-index",
+        type=int,
+        help="full confirmatory-grid index for one exploratory extension profile",
+    )
+    parser.add_argument(
+        "--source-experiment-dir",
+        help="sealed confirmatory run supplying adapters to a separate extension run",
     )
     parser.add_argument("--batch-size", default="auto")
     parser.add_argument("--dtype", default="bfloat16")
@@ -110,11 +126,34 @@ def parse_args() -> argparse.Namespace:
         help="required for HumanEval; use only in a disposable isolated environment",
     )
     parser.add_argument("--code-sandbox", choices=["bwrap"])
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def mixture_label(value: float) -> str:
     return f"{value:.4f}".replace(".", "p")
+
+
+def profile_for_grid_index(design: Mapping[str, object], index: int) -> str:
+    """Return one nonconfirmatory profile in the source grid order."""
+    arms = grid_arms(design)
+    if index < 0 or index >= len(arms):
+        raise IndexError(f"Profile index {index} is outside the {len(arms)}-arm grid")
+    if index in CONFIRMATORY_PROFILE_INDICES:
+        raise ValueError(f"Profile index {index} is reserved for confirmatory robustness")
+    mixture, seed = arms[index]
+    return f"{mixture}:{seed}"
+
+
+def robustness_input_releases(
+    profile_release: str, source_receipt: Mapping[str, object] | None
+) -> list[str]:
+    """Return the source gate plus exact profile release for a terminal receipt."""
+    if source_receipt is None:
+        return [profile_release]
+    source_release = source_receipt.get("output_release")
+    if not isinstance(source_release, str) or not source_release:
+        raise RuntimeError("Exploratory source receipt has no output release")
+    return [source_release, profile_release]
 
 
 def parse_profiles(raw: str | None, design: dict[str, object]) -> list[dict[str, object]]:
@@ -209,8 +248,8 @@ def write_pinned_task_configs(
     return [task_name for task_name, _, _ in specs]
 
 
-def main() -> int:
-    args = parse_args()
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
     tasks = [item.strip() for item in args.tasks.split(",") if item.strip()]
     unsafe_tasks = {"humaneval", "humaneval_instruct", "mbpp", "mbpp_instruct"}
     if unsafe_tasks.intersection(tasks) and not args.allow_generated_code_execution:
@@ -221,10 +260,33 @@ def main() -> int:
     if unsafe_tasks.intersection(tasks) and args.code_sandbox != "bwrap":
         raise SystemExit("HumanEval/MBPP require --code-sandbox=bwrap")
     experiment_dir = Path(args.experiment_dir).resolve()
-    active_run_contract(experiment_dir, require_prepared_receipt=True)
+    source_experiment_dir = (
+        Path(args.source_experiment_dir).resolve()
+        if args.source_experiment_dir
+        else experiment_dir
+    )
+    exploratory_extension = source_experiment_dir != experiment_dir
+    active_run_contract(
+        experiment_dir,
+        require_prepared_receipt=not exploratory_extension,
+    )
+    source_receipt: dict[str, object] | None = None
+    if exploratory_extension:
+        if args.profile_index is None:
+            raise ValueError("Exploratory extension requires --profile-index")
+        validated_source_run(source_experiment_dir)
+        source_receipt = validate_extension_source_receipt(
+            experiment_dir, source_experiment_dir
+        )
+    elif args.profile_index is not None:
+        raise ValueError("--profile-index is reserved for a separate exploratory extension")
     bwrap_path = require_bwrap()
-    design = json.loads((experiment_dir / "design.json").read_text(encoding="utf-8"))
-    provenance = json.loads((experiment_dir / "provenance.json").read_text(encoding="utf-8"))
+    design = json.loads(
+        (source_experiment_dir / "design.json").read_text(encoding="utf-8")
+    )
+    provenance = json.loads(
+        (source_experiment_dir / "provenance.json").read_text(encoding="utf-8")
+    )
     if tasks != DEFAULT_TASKS.split(","):
         raise ValueError("Sealed robustness runs require MATH-500 and HumanEval")
     robustness_datasets = provenance.get("robustness_datasets")
@@ -235,8 +297,17 @@ def main() -> int:
     }
     lm_eval_module = importlib.import_module("lm_eval")
     task_root = Path(str(lm_eval_module.__file__)).resolve().parent / "tasks"
-    profiles = parse_profiles(args.profiles, design)
-    output_root = experiment_dir / "robustness_benchmarks"
+    requested_profiles = (
+        profile_for_grid_index(design, args.profile_index)
+        if args.profile_index is not None
+        else args.profiles
+    )
+    profiles = parse_profiles(requested_profiles, design)
+    output_root = experiment_dir / (
+        "exploratory_robustness_benchmarks"
+        if exploratory_extension
+        else "robustness_benchmarks"
+    )
     output_root.mkdir(parents=True, exist_ok=True)
     hf_home = Path(os.environ.get("HF_HOME", experiment_dir / "hf_cache")).resolve()
     sandbox_environment = {
@@ -264,9 +335,13 @@ def main() -> int:
     failures = 0
     for profile in profiles:
         profile_name = str(profile["name"])
-        input_release = profile_input_release(experiment_dir, profile)
+        input_release = profile_input_release(source_experiment_dir, profile)
         adapter_relative = profile.get("adapter_relative")
-        adapter = experiment_dir / Path(str(adapter_relative)) if adapter_relative else None
+        adapter = (
+            source_experiment_dir / Path(str(adapter_relative))
+            if adapter_relative
+            else None
+        )
         if adapter is not None and not (adapter / "adapter_config.json").exists():
             raise FileNotFoundError(f"Adapter is missing or incomplete: {adapter}")
         revision = provenance.get("model", {}).get("revision")
@@ -308,7 +383,7 @@ def main() -> int:
             inner_command.extend(["--limit", str(args.limit)])
         command = sandboxed_lm_eval_command(
             inner_command=inner_command,
-            experiment_dir=experiment_dir,
+            experiment_dir=source_experiment_dir,
             output_dir=output_path.parent,
             executor_release_root=Path(__file__).resolve().parent,
             environment_root=Path(sys.prefix),
@@ -354,11 +429,30 @@ def main() -> int:
                     "results_sha256": sha256_file(output_path),
                     **contract_release_fields(
                         experiment_dir,
-                        stage="robustness",
+                        stage=(
+                            "exploratory-robustness"
+                            if exploratory_extension
+                            else "robustness"
+                        ),
                         output_identity=profile_name,
-                        input_producer_releases=[input_release],
+                        input_producer_releases=robustness_input_releases(
+                            input_release, source_receipt
+                        ),
                     ),
                     **result_fingerprints(experiment_dir),
+                    **(
+                        {
+                            "source_run_id": source_receipt["source_run_id"],
+                            "source_executor_release": source_receipt[
+                                "source_executor_release"
+                            ],
+                            "source_run_contract_sha256": source_receipt[
+                                "source_run_contract_sha256"
+                            ],
+                        }
+                        if source_receipt is not None
+                        else {}
+                    ),
                 },
             )
     if failures:

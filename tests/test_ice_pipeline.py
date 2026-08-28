@@ -5,10 +5,48 @@ import json
 import tempfile
 from pathlib import Path
 
-from ice_pipeline import parse_sacct_rows, validated_terminal_release
+from ice_pipeline import (
+    parse_sacct_rows,
+    validated_terminal_release,
+    write_submission_receipt,
+)
 
 
 class ComputeAccountingTests(unittest.TestCase):
+    def test_extension_submission_receipt_names_source_inputs_and_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            contract = root / "run_contract.json"
+            output = root / "submission.json"
+            contract.write_text(
+                json.dumps(
+                    {
+                        "run_id": "extension",
+                        "executor_release": "a" * 40,
+                        "coordinator_release": "a" * 40,
+                        "release_receipt_sha256": "release-receipt-sha",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            write_submission_receipt(
+                contract_path=contract,
+                output_path=output,
+                jobs=["bootstrap=123", "profiles=456"],
+                input_producer_releases=["source-submission-release"],
+                pre_side_effect_release_gate="submit_exploratory_robustness.sh",
+            )
+
+            receipt = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                receipt["input_producer_releases"], ["source-submission-release"]
+            )
+            self.assertEqual(
+                receipt["pre_side_effect_release_gate"],
+                "submit_exploratory_robustness.sh",
+            )
+
     def test_allocation_rows_exclude_steps_and_compute_gpu_hours(self) -> None:
         raw = "\n".join(
             [

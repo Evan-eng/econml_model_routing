@@ -9,6 +9,30 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class IceSlurmScriptTests(unittest.TestCase):
+    def test_exploratory_launcher_uses_sparse_aftercorr_array(self) -> None:
+        submitter = (ROOT / "slurm" / "submit_exploratory_robustness.sh").read_text(
+            encoding="utf-8"
+        )
+        worker = (ROOT / "slurm" / "exploratory_robustness.sbatch").read_text(
+            encoding="utf-8"
+        )
+        finalizer = (ROOT / "slurm" / "exploratory_finalize.sbatch").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('PROFILE_INDICES="1-19,21-39,41-44"', submitter)
+        self.assertIn('aftercorr:${SOURCE_ARRAY_JOB}', submitter)
+        self.assertIn('--array="${PROFILE_INDICES}%42"', submitter)
+        self.assertIn('afterok:${PROFILES_JOB}:${SOURCE_ROBUSTNESS_JOB}', submitter)
+        self.assertIn("EXCLUDE_NODES", submitter)
+        self.assertIn("--source-experiment-dir", worker)
+        self.assertIn("--profile-index", worker)
+        self.assertIn("ensure_cuda_allocation_or_requeue", worker)
+        self.assertIn("sacct -X", finalizer)
+        for text in (worker, finalizer):
+            self.assertNotIn("#SBATCH --account", text)
+            self.assertNotIn("#SBATCH --partition", text)
+
     def test_busy_cuda_allocation_requeues_same_receipted_job(self) -> None:
         script = f"""
 source {ROOT / 'slurm' / 'common.sh'}
