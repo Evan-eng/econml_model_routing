@@ -225,3 +225,18 @@ sandbox failure. No robustness retry was submitted. At the snapshot, 38 of 45
 arm receipts existed, three arms were still RUNNING, the four previously
 diagnosed arm failures remained unchanged, and analysis/finalization were still
 dependency-blocked.
+
+[2026-08-28 02:12 EDT] Confirmatory grid reached terminal partial state
+
+Observation: All baseline and confirmatory allocations are terminal. Forty-one
+unique arm DONE receipts match the sealed executor/coordinator release and the
+frozen design, provenance, and run-contract digests. The four missing cells are
+`(z=0, seed=47)`, `(z=0, seed=71)`, `(z=0.125, seed=11)`, and
+`(z=0.125, seed=71)`, matching the four diagnosed exit-1 allocations. Across
+the baseline, 45 arm allocations, and four failed robustness allocations, the
+50 allocation-only rows total 85.135833 GPU-hours.
+
+Inference: The active run cannot satisfy its 45-arm receipt-completeness gate,
+so main analysis and finalization remain dependency-blocked. The existing 41
+arm receipts are valid partial artifacts but do not constitute accepted results.
+No retry, cancellation, design reduction, or downstream bypass was performed.
