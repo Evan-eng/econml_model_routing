@@ -1317,3 +1317,12 @@ Observation: A compact 19 MB, 440-file copy was preserved off ICE under
 Its read-only compact manifest verifies and has SHA-256
 `067baa4575df0f3b2b4a70249c94a46e48ec6a1c82a38069709c9d604bd707e0`.
 The full 196 MB accepted export remains on ICE.
+
+[2026-08-28 19:53 EDT] Compact bundle augmented with terminal receipt
+
+Observation: The off-ICE compact bundle now also contains the terminal
+`FINALIZED` receipt. It has 441 files, zero writable paths, and a verified
+compact-manifest SHA-256 of
+`8cf8109607a4c099fb34f749f5df49e8f44bab23fd8606fb1e9329c499080b2c`.
+This entry supersedes only the compact-copy count and compact-manifest digest
+reported in the preceding entry; the accepted ICE manifest is unchanged.
