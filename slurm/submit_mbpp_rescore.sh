@@ -15,6 +15,7 @@ PARENT_RUN_ID="qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-robustness-re
 PARENT_EXPERIMENT_DIR="${ARTIFACT_ROOT}/runs/${PARENT_RUN_ID}"
 PARENT_EXPORT_DIR="${ARTIFACT_ROOT}/exports/${PARENT_RUN_ID}"
 PROFILE_INDICES="0-45"
+RESCORE_MAX_PARALLEL=8
 RUN_ID="${RUN_ID:-${SOURCE_RUN_ID}-mbpp-rescore-$(date -u +%Y%m%dT%H%M%SZ)-${RELEASE_SHA:0:12}}"
 EXPERIMENT_DIR="${ARTIFACT_ROOT}/runs/${RUN_ID}"
 EXPORT_DIR="${ARTIFACT_ROOT}/exports/${RUN_ID}"
@@ -91,7 +92,7 @@ SOURCE_GATE_JOB="$(submit_job --dependency="afterok:${DOCTOR_JOB}" \
   --error="${LOG_DIR}/source_gate_%A_%a.err" \
   "${RELEASE_DIR}/slurm/mbpp_rescore_source_gate.sbatch")"
 RESCORE_JOB="$(submit_job --dependency="aftercorr:${SOURCE_GATE_JOB}" \
-  --array="${PROFILE_INDICES}%46" --export="${common_exports}" \
+  --array="${PROFILE_INDICES}%${RESCORE_MAX_PARALLEL}" --export="${common_exports}" \
   --output="${LOG_DIR}/rescore_%A_%a.out" \
   --error="${LOG_DIR}/rescore_%A_%a.err" \
   "${RELEASE_DIR}/slurm/mbpp_rescore.sbatch")"

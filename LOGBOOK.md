@@ -1196,3 +1196,37 @@ Bash syntax, and diff checks pass after the correction.
 Inference: This was a coordinator submission defect, not an evaluation or
 sandbox failure. It requires a new exact-SHA release; the accounting-only run
 must not be resumed.
+
+[2026-08-28 19:19 EDT] Forty-six-way MBPP scorer fan-out exceeded node namespace capacity
+
+Observation: Corrected release
+`47d5a4270e8035a485430a81109348d41b0288a9` submitted run
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-mbpp-rescore-20260828T231652Z-47d5a4270e80`
+with bootstrap `5596348`, doctor `5596349`, source-gate array `5596350`,
+rescore array `5596351`, and finalizer `5596352`. The sealed receipt binds
+equal executor and coordinator releases and the exact accepted source inputs.
+
+Observation: Bootstrap, the exact scoring-path sandbox doctor, and all 46
+source gates completed with exit code 0. With 46 scorer tasks released
+together on ICE, 10 profiles completed and 36 failed closed after about 20
+seconds. Every failure occurred before candidate execution with bubblewrap
+reporting user-namespace creation `No space left on device`; there was no
+false pass, partial DONE receipt, or containment downgrade. The permanently
+dependency-blocked finalizer `5596352` was cancelled, and no unrelated job was
+altered.
+
+Inference: The exact doctor proves a single scorer path, while the observed
+10-success/36-failure split on the same compute wave shows that 46 concurrent
+bubblewrap namespaces exceed the node's user-namespace capacity. This is an
+operational concurrency defect, not a scientific outcome and not evidence of
+storage exhaustion.
+
+Observation: The replacement launcher keeps all 46 frozen profiles but caps
+only the CPU rescore array at eight concurrent tasks, below the 10-task live
+success boundary. Source gates remain fully parallel. The resulting six short
+waves preserve the design and should add only minutes of wall time. Ruff,
+Pyright, 105 tests, Bash syntax, and diff checks pass after the change.
+
+Inference: The `47d5a427...` run is accounting-only and must not be resumed.
+A clean exact-SHA complete replacement is required so every accepted profile
+shares one coherent release and run contract.
