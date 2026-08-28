@@ -17,8 +17,8 @@ set -euo pipefail
 
 module purge
 module load anaconda3/2023.03
-[[ "$(git -C "${RELEASE_DIR}" rev-parse HEAD)" == "${RELEASE_SHA}" ]]
-[[ -z "$(git -C "${RELEASE_DIR}" status --porcelain --untracked-files=all)" ]]
+[[ "$(git -c core.fileMode=false -C "${RELEASE_DIR}" rev-parse HEAD)" == "${RELEASE_SHA}" ]]
+[[ -z "$(git -c core.fileMode=false -C "${RELEASE_DIR}" status --porcelain --untracked-files=all)" ]]
 export EXECUTOR_RELEASE="${RELEASE_SHA}"
 export PYTHONPATH="${RELEASE_DIR}"
 srun python -c 'from pathlib import Path; import os; from ice_contract import validate_run_contract; validate_run_contract(Path(os.environ["RUN_CONTRACT_PATH"]), expected_release=os.environ["RELEASE_SHA"], expected_experiment_dir=Path(os.environ["EXPERIMENT_DIR"]))'

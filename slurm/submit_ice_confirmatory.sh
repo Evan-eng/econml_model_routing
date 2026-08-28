@@ -26,8 +26,8 @@ UV_BIN="${UV_BIN:-${HOME}/.local/bin/uv}"
 [[ -f "${RELEASE_DIR}/uv.lock" ]]
 python3 -c 'import json,sys; p,sha,deploy,origin=sys.argv[1:]; r=json.load(open(p)); assert r.get("contract")=="pace-code-release-v3"; assert r.get("revision")==sha; assert r.get("deployment_path")==deploy; assert r.get("origin")==origin' \
   "${RELEASE_RECEIPT}" "${RELEASE_SHA}" "${RELEASE_DIR}" "${REPO_URL}"
-[[ "$(git -C "${RELEASE_DIR}" rev-parse HEAD)" == "${RELEASE_SHA}" ]]
-[[ -z "$(git -C "${RELEASE_DIR}" status --porcelain --untracked-files=all)" ]]
+[[ "$(git -c core.fileMode=false -C "${RELEASE_DIR}" rev-parse HEAD)" == "${RELEASE_SHA}" ]]
+[[ -z "$(git -c core.fileMode=false -C "${RELEASE_DIR}" status --porcelain --untracked-files=all)" ]]
 
 LOCK_SHA="$(sha256sum "${RELEASE_DIR}/uv.lock" | cut -d' ' -f1)"
 VENV_DIR="${ARTIFACT_ROOT}/envs/${LOCK_SHA}"

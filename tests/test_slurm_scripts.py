@@ -31,6 +31,17 @@ class IceSlurmScriptTests(unittest.TestCase):
             self.assertIn(f'--begin="now+{offset}hours"', text)
         self.assertIn("status_snapshot.sbatch", text)
 
+    def test_release_cleanliness_checks_ignore_v3_sealing_modes_only(self) -> None:
+        for name in (
+            "common.sh",
+            "bootstrap.sbatch",
+            "status_snapshot.sbatch",
+            "submit_ice_confirmatory.sh",
+        ):
+            text = (ROOT / "slurm" / name).read_text(encoding="utf-8")
+            self.assertIn("git -c core.fileMode=false -C", text, name)
+            self.assertIn("status --porcelain --untracked-files=all", text, name)
+
 
 if __name__ == "__main__":
     unittest.main()

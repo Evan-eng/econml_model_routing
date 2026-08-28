@@ -18,7 +18,7 @@ module purge
 module load anaconda3/2023.03
 export EXECUTOR_RELEASE="${RELEASE_SHA}"
 export PYTHONPATH="${RELEASE_DIR}"
-[[ "$(git -C "${RELEASE_DIR}" rev-parse HEAD)" == "${RELEASE_SHA}" ]]
-[[ -z "$(git -C "${RELEASE_DIR}" status --porcelain --untracked-files=all)" ]]
+[[ "$(git -c core.fileMode=false -C "${RELEASE_DIR}" rev-parse HEAD)" == "${RELEASE_SHA}" ]]
+[[ -z "$(git -c core.fileMode=false -C "${RELEASE_DIR}" status --porcelain --untracked-files=all)" ]]
 srun python "${RELEASE_DIR}/ice_pipeline.py" status-snapshot \
   --experiment-dir "${EXPERIMENT_DIR}" --label "${STATUS_LABEL}"

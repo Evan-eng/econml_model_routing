@@ -69,3 +69,20 @@ Result:
 
 Deployment, the allocated-node sandbox/GPU doctor, same-model smoke, and every
 scientific receipt remain pending live ICE evidence.
+
+[2026-08-27 22:17 EDT] Correction and v3 deployment gate repair
+
+Context: The preceding `22:38 EDT` timestamp was recorded incorrectly; this
+entry supplies the correct ordering without rewriting the append-only record.
+
+Action: The first deployment used ICE's legacy v2 helper and the submitter
+rejected it before `sbatch`. After explicit approval, a tested helper-only
+dotfiles topic release activated the v3-capable stable wrapper. The unchanged
+experiment SHA then received a verified v3 receipt in the new release root.
+
+Result: A traced submission still stopped before run-directory creation or
+`sbatch` because v3's read-only executable sealing appeared as file-mode-only
+Git changes. Updated all remote cleanliness gates to use
+`core.fileMode=false` while retaining exact SHA, byte, untracked-file, contract,
+and v3 receipt validation. Nineteen tests, Ruff, Pyright, shell syntax, and diff
+checks pass. No experiment jobs have been submitted yet.
