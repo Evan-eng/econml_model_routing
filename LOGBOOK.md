@@ -379,3 +379,29 @@ Inference: Run `qwen3-8b-confirmatory-20260828T152037Z-b55d30cea848` is
 terminally incomplete and becomes accounting-only. A fresh exact-SHA run is
 required; no application-abort requeue or dependency rewrite is authorized or
 performed.
+
+[2026-08-28 11:30 EDT] Preparation rate limit and offline-cache hardening
+
+Observation: In run `qwen3-8b-confirmatory-20260828T152609Z-ab988a9ea7ed`,
+bootstrap `5594985` completed, but full preparation `5594986` exited `1:0`
+after Hugging Face returned HTTP 429 while refetching the pinned code-training
+parquet. The run directory contains only partial pre-marker cache files and no
+provenance or preparation receipt. Downstream preparation, doctor, smoke, and
+scientific jobs remained dependency-blocked.
+
+Action: No blind retry was submitted. The shared cache already contains the
+same exact model and dataset revisions from earlier receipted preparation, so
+the sealed preparation worker now enables Hugging Face, Datasets, and
+Transformers offline modes before loading. Missing cache content therefore
+fails closed instead of contacting an external mutable service or receiving a
+rate limit.
+
+Verification: Added a red-green structural regression test that requires
+offline preparation and prohibits the prior environment unsetting. Ruff,
+Pyright, 27 Pytest tests, Slurm shell syntax, `uv lock --check`, and
+`git diff --check` pass.
+
+Inference: Run `qwen3-8b-confirmatory-20260828T152609Z-ab988a9ea7ed` is
+terminally incomplete and becomes accounting-only. A fresh exact-SHA run is
+required to combine offline preparation with the successful-finalization
+boundary; no incomplete cache files are reused as run artifacts.
