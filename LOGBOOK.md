@@ -535,3 +535,25 @@ Inference: Robustness can overlap the rest of the grid as designed, but the
 three adapted profiles cannot start before their corresponding endpoint
 adapters have valid DONE receipts. The already-complete baseline receipt is
 not sufficient for those adapted profiles.
+
+[2026-08-28 13:25 EDT] Excluded-node replacement passed smoke and launched full grid
+
+Observation: Active run
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c` completed bootstrap
+`5595230`, full/smoke preparation `5595231`/`5595232`, GPU doctor `5595233`,
+smoke baseline `5595234`, all three smoke arms `5595235`, and smoke gate
+`5595236` with exit zero. Smoke arm allocation rows show no restarts and ran
+only on nodes outside the four-node exclusion.
+
+Result: The smoke gate released full baseline `5595237`, endpoint array
+`5595238`, and all 42 remaining-array tasks `5595239`. At 13:24 EDT all 46
+full GPU allocations had been RUNNING for about 27 minutes with zero recorded
+restarts or failures. Endpoint report `5595240`, four robustness profiles
+`5595241`, analysis `5595242`, and finalizer `5595243` remain correctly
+dependency-bound. No full baseline, arm, robustness, analysis, or final DONE
+receipt existed at this observation.
+
+Inference: Excluding the four empirically bad nodes removed the immediate CUDA
+allocation failure mode through smoke and initial full-grid launch. Continued
+RUNNING state is not a scientific result; acceptance still requires all
+terminal receipts and the final manifest/export.
