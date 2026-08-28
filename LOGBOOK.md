@@ -168,3 +168,28 @@ confirmatory cells then launched together; allocation-only `sacct` and `squeue`
 both reported 46 RUNNING jobs, and all 45 arms created checkpoint-contract
 fingerprints. This is launch evidence only. Robustness, analysis, finalization,
 and accepted export remain pending terminal receipts.
+
+[2026-08-27 23:27 EDT] Four confirmatory arms stopped at quantized-model preparation
+
+Context: Allocation-only `sacct -X` rows reported exit `1:0` for array tasks
+`5594359_2`, `_3`, `_5`, and `_8` after 3:08-3:20. The corresponding frozen
+cells are `(z=0, seed=47)`, `(z=0, seed=71)`, `(z=0.125, seed=11)`, and
+`(z=0.125, seed=71)`. Three tasks ran on `atl1-1-03-011-13-0` and one on
+`atl1-1-03-011-18-0`; other allocations on both nodes continued running.
+
+Action: Read the four task logs, the frozen environment receipt, and the exact
+dependency source without resubmitting an arm. Every task loaded all five Qwen
+shards, constructed the PEFT trainer, and then raised the same
+`torch.device(None)` exception from the 4-bit Accelerate device-map path before
+the first optimizer step. The frozen environment uses Accelerate 1.8.1. The
+signature matches upstream issue `huggingface/accelerate#3758`; merged fix
+`huggingface/accelerate#3895` changes the indexless device comparison that calls
+`torch.device(None)`.
+
+Result: This is a diagnosed runtime/dependency exception, not a Slurm
+`PREEMPTED`, `NODE_FAIL`, or time-limit exit, so no blind retry or requeue was
+performed. At the snapshot, 42 allocations remained RUNNING, four downstream
+stages remained dependency-pending, and the active run had no baseline or arm
+DONE receipt yet. Recovery requires an explicit release/run-contract decision;
+the sealed `5ba692c42de46fe3d0f856d5bc47117d99bb2613` executor and the frozen 45-cell
+design remain unchanged.
