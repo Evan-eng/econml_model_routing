@@ -964,3 +964,31 @@ three profile-specific gates wait for their accepted source adapters. Full
 completion still requires all 46 production DONE receipts, the source's 45-arm
 analysis receipt, the combined final manifest, allocation-only accounting, and
 the read-only export.
+
+[2026-08-28 16:38 EDT] Production robustness fan-out is making forward progress
+
+Observation: Allocation-only `sacct -X` showed all 43 released production
+robustness profiles RUNNING on receipt-listed H100 or H200 allocations, with no
+failed production allocation row. The recovery finalizer remained
+dependency-pending. The source run still had baseline plus 42 of 45 arm DONE
+receipts; source allocations `5595271`, `5595282`, and `5595283` remained
+RUNNING, and source analysis `5595242` remained dependency-pending.
+
+Observation: Live `sstat` telemetry showed each unfinished source arm using
+about 5.3 GiB RSS with more than 5.5 GB of disk writes and about 3:35 CPU time.
+Their stderr files received fresh writes between 16:36:45 and 16:37:30 EDT.
+Representative production baseline job `5595933` reached 243 of 664 generation
+requests (37 percent) at about 6.1 seconds per request, with the progress meter
+estimating about 43 minutes remaining in that generation phase. No production
+robustness DONE receipt existed at this snapshot.
+
+Observation: The ICE SSH endpoint remained intermittently unavailable during
+banner exchange, but bounded retries recovered live visibility. This was an
+observation-path interruption only; scheduler allocations continued running
+and writing logs independently.
+
+Inference: The current evidence supports continued unattended execution rather
+than intervention. Completion remains unproven until the three source arm
+receipts, source analysis receipt, all 46 production robustness receipts,
+recovery `FINALIZED.json`, allocation-only accounting, checksummed manifest,
+and read-only export reconcile.
