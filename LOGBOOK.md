@@ -193,3 +193,18 @@ stages remained dependency-pending, and the active run had no baseline or arm
 DONE receipt yet. Recovery requires an explicit release/run-contract decision;
 the sealed `5ba692c42de46fe3d0f856d5bc47117d99bb2613` executor and the frozen 45-cell
 design remain unchanged.
+
+[2026-08-28 00:07 EDT] Full baseline receipt completed
+
+Observation: Allocation `5594357` completed with exit `0:0` after 1:01:37 and
+wrote `baseline/DONE.json`. The receipt binds executor and coordinator release
+`5ba692c42de46fe3d0f856d5bc47117d99bb2613`, design digest
+`1ae2afcfcd1dee7c67bb8fdd5532c037fd762d9dc025ebc08a80ca769db16303`, and
+the active run contract. The metrics artifact checksum is
+`8d741d6ce24f65c6de69d564fac45261570e112b574a32ee5aae3a24a5f50cad`.
+
+Inference: The baseline stage is receipt-complete, but it does not make the run
+acceptable because no confirmatory arm has a DONE receipt and four frozen cells
+remain failed. Forty-one arm allocations were still RUNNING, and robustness,
+analysis, and finalization remained dependency-pending. No scheduler mutation
+was performed.
