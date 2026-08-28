@@ -320,3 +320,31 @@ Result: At the first queue snapshot, bootstrap `5594908` was RUNNING and the
 scientific jobs were PENDING on their declared dependencies. This is verified
 submission and queue evidence only; preparation, GPU doctor, smoke, full-grid,
 robustness, analysis, and export acceptance remain pending receipts.
+
+[2026-08-28 11:20 EDT] Smoke preparation cache race and serialized replacement
+
+Observation: In release `2843dc350de2a5eb154af1e833687d8437587796`, full
+preparation `5594910` and GPU doctor `5594911` completed with exit zero, but
+concurrent smoke preparation `5594909` exited `134:0` during CPython
+finalization after atomically writing its cache marker and provenance. The
+trace was the same `PyGILState_Release` finalization abort previously observed
+when smoke and full preparation shared the dataset/cache stack concurrently.
+Smoke jobs `5594912` and `5594913` therefore became
+`DependencyNeverSatisfied`; no smoke or confirmatory GPU work started.
+
+Action: A proposed same-job requeue was rejected because an application abort
+is outside the run contract's automatic recovery list, so no retry or
+dependency rewrite was performed. Instead, reordered the sealed submitter so
+full preparation completes before smoke preparation starts. GPU doctor may
+still overlap the later smoke preparation because it only consumes the fully
+receipted full run. Added a structural regression test for the new dependency.
+
+Verification: Ruff, Pyright, 24 Pytest tests, all Slurm shell syntax,
+`uv lock --check`, and `git diff --check` pass. The change preserves the exact
+design and all receipt gates while removing concurrent preparation against the
+shared cache.
+
+Inference: Run `qwen3-8b-confirmatory-20260828T151445Z-2843dc350de2` is
+terminally incomplete and becomes accounting-only. A fresh exact-SHA release
+and run contract are required; its completed full-preparation and doctor
+receipts are not reused across the release boundary.

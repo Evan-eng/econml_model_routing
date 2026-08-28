@@ -34,6 +34,10 @@ class IceSlurmScriptTests(unittest.TestCase):
             'GPU_DOCTOR_JOB="$(submit_job --dependency="afterok:${FULL_PREP_JOB}"',
             text,
         )
+        self.assertIn(
+            'SMOKE_PREP_JOB="$(submit_job --dependency="afterok:${FULL_PREP_JOB}"',
+            text,
+        )
 
     def test_release_cleanliness_checks_ignore_v3_sealing_modes_only(self) -> None:
         for name in (
