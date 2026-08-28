@@ -146,3 +146,25 @@ submitter.
 Result: The failed job did not reach bubblewrap, and no smoke or confirmatory
 work started. Nineteen tests, Ruff, Pyright, and Slurm syntax checks pass. This
 chain will be retained for accounting and superseded by a fresh exact release.
+
+[2026-08-27 22:54 EDT] Accepted smoke and 46-way confirmatory fan-out
+
+Context: Active release `5ba692c42de46fe3d0f856d5bc47117d99bb2613` is
+bound to run `qwen3-8b-confirmatory-20260828T024303Z-5ba692c42de4` and jobs
+`5594350` through `5594368`.
+
+Action: Full preparation completed, and allocated-node doctor `5594353`
+produced a receipt proving network isolation, nonexistent sandbox home, and
+exactly one Slurm-authorized H100 inside bubblewrap. Smoke preparation
+`5594351` aborted during Python finalization after writing its cache and
+provenance but before `prepare.json`; a diagnosed single requeue under the same
+job ID and release short-circuited the prepared cache, warmed the model, and
+completed with `Restarts=1`. The two original smoke dependency records were
+refreshed to the same successful preparation and doctor IDs.
+
+Result: The baseline, all three smoke arms, and smoke gate completed with exit
+zero and four reconciled DONE receipts. The full baseline plus all 45 unique
+confirmatory cells then launched together; allocation-only `sacct` and `squeue`
+both reported 46 RUNNING jobs, and all 45 arms created checkpoint-contract
+fingerprints. This is launch evidence only. Robustness, analysis, finalization,
+and accepted export remain pending terminal receipts.
