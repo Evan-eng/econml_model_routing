@@ -621,3 +621,39 @@ performed locally against `a7be3e8f512df92bf3ad3b5ff318d0cbb486c094`.
 Inference: The implementation is ready for topic-branch publication, exact-SHA
 sealing, and submission. No cluster execution or scientific result is implied
 by these local gates.
+
+[2026-08-28 14:41 EDT] Exploratory robustness extension submitted and old runs audited
+
+Observation: Topic-branch release
+`d172354539dce0025befbbe9d76f4d6eab31d3ad` was pushed, verified against the
+remote ref, and sealed under
+`/storage/ice-shared/cs7634/staff/econml/releases/econml_model_routing_v3`.
+Extension run
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-robustness-all-20260828T183840Z-d172354539dc`
+has submission receipt jobs bootstrap `5595431`, GPU doctor `5595432`,
+42-profile sparse array `5595433`, and finalizer `5595434`. The receipt
+binds the new executor/coordinator SHA to source run
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c` and source release
+`c3cb569cf51c3f53a3c7492388c7183c9f91c6df`.
+
+Observation: Slurm shows the sparse array indices
+`1-19,21-39,41-44%42`, dependency
+`aftercorr:5595239,afterok:5595432`, one HX00 GPU per task, 15:30 time limit,
+and the four recorded bad CUDA nodes excluded. Bootstrap and the compute-node
+GPU sandbox doctor completed with exit zero. Finalizer `5595434` waits for
+both array `5595433` and confirmatory robustness job `5595241`.
+
+Observation: The accepted source run now has the baseline and 2 of 45 arm DONE
+receipts; its other 43 arm allocations remain RUNNING after about 1:42. It has
+no robustness, analysis, final, or export acceptance receipt yet. The bounded
+audit of all explicitly superseded runs found no finalized run. Superseded
+run ending `c229e3c901df` still had two stray remaining-array allocations,
+`5595040_27` and `5595040_33`, running for 10,687 seconds each. Both exact
+receipt-listed tasks were cancelled so the run is accounting-only; their
+allocation rows remain preserved as `CANCELLED by 3039927`. No accepted-run
+job or unrelated account job was altered.
+
+Inference: Submission and its operational gates are verified, but there is no
+new exploratory scientific result yet. Extension tasks will release
+individually only after their matching source arm exits successfully; the
+accepted source run remains the critical path.
