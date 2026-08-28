@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+import csv
 import hashlib
 import json
 from math import sqrt
@@ -106,11 +107,48 @@ def build_parser() -> argparse.ArgumentParser:
     rescore = commands.add_parser("rescore")
     rescore.add_argument("--experiment-dir", type=Path, required=True)
     rescore.add_argument("--profile-index", type=int, required=True)
+    accounting = commands.add_parser("validate-accounting")
+    accounting.add_argument("--raw", type=Path, required=True)
+    accounting.add_argument("--job-ids", required=True)
     final = commands.add_parser("finalize")
     final.add_argument("--experiment-dir", type=Path, required=True)
     final.add_argument("--export-dir", type=Path, required=True)
     final.add_argument("--parent-export-dir", type=Path, required=True)
     return parser
+
+
+def validate_accounting(raw: Path, job_ids: str) -> None:
+    """Require the active and superseded allocation roots in a terminal ledger."""
+    if re.fullmatch(r"[0-9]+(?::[0-9]+)*", job_ids) is None:
+        raise MBPPRescoreError("Accounting job IDs must be colon-delimited integers")
+    expected = set(job_ids.split(":"))
+    with raw.open(encoding="utf-8", newline="") as handle:
+        rows = [row for row in csv.reader(handle, delimiter="|") if row]
+    if any(len(row) != 8 for row in rows):
+        raise MBPPRescoreError("Allocation-only accounting row has the wrong schema")
+    observed = {row[0] for row in rows}
+    missing = sorted(expected - observed)
+    if missing:
+        raise MBPPRescoreError(f"Allocation-only accounting is missing roots: {missing}")
+    states = {row[2].split()[0].rstrip("+") for row in rows}
+    terminal = {
+        "BOOT_FAIL",
+        "CANCELLED",
+        "COMPLETED",
+        "DEADLINE",
+        "FAILED",
+        "NODE_FAIL",
+        "OUT_OF_MEMORY",
+        "PREEMPTED",
+        "TIMEOUT",
+    }
+    nonterminal = sorted(states - terminal)
+    if nonterminal:
+        raise MBPPRescoreError(
+            f"Allocation-only accounting contains nonterminal states: {nonterminal}"
+        )
+    if not {"CANCELLED", "FAILED"}.issubset(states):
+        raise MBPPRescoreError("Superseded cancelled and failed attempts are missing")
 
 
 def _roster(design: dict[str, Any]) -> list[dict[str, object]]:
@@ -1093,6 +1131,8 @@ def main(argv: list[str] | None = None) -> None:
         )
     elif args.command == "rescore":
         rescore(args.experiment_dir, args.profile_index)
+    elif args.command == "validate-accounting":
+        validate_accounting(args.raw, args.job_ids)
     else:
         finalize(args.experiment_dir, args.export_dir, args.parent_export_dir)
 

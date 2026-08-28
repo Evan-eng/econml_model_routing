@@ -1230,3 +1230,39 @@ Pyright, 105 tests, Bash syntax, and diff checks pass after the change.
 Inference: The `47d5a427...` run is accounting-only and must not be resumed.
 A clean exact-SHA complete replacement is required so every accepted profile
 shares one coherent release and run contract.
+
+[2026-08-28 19:33 EDT] Corrected MBPP results complete; allocation export found incomplete
+
+Observation: Release `7b6fcc4a3c4686988fe72dea3d2c701ca4ed2b34`
+completed clean replacement run
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-mbpp-rescore-20260828T232208Z-7b6fcc4a3c46`.
+Bootstrap, doctor, all 46 source gates, all 46 eight-at-once rescores, and
+finalizer `5596449` completed with exit code 0. The run produced 46 unique
+profile DONE receipts, corrected 2,000-bootstrap analysis, a terminal receipt,
+manifest digest `f0f4babad7057e9e051bce02132afa857e5c7c59b46f8a836eef415968b71ed8`,
+and a read-only export with zero writable paths.
+
+Observation: Independent acceptance found that the exported allocation ledger
+contained only bootstrap `5596445`. The launcher put comma-separated job IDs
+inside Slurm's comma-delimited `--export` value, so the finalizer received only
+the first ID. The scientific profile artifacts and receipts are complete, but
+the bundle fails the experiment's full-attempt accounting requirement and is
+therefore not the accepted final export.
+
+Observation: A live allocation-only query over the two failed chains and the
+scientifically complete `7b6fcc4...` chain returned 194 rows: 153 COMPLETED,
+36 FAILED, and 5 CANCELLED. This proves that the required history remains
+available and can be captured without modifying any historical artifact.
+
+Observation: The repair exports job IDs with colon delimiters, reconstructs
+commas inside the finalizer, and validates every expected active and
+superseded root plus terminal state before accounting or export. The next clean
+replacement's ledger includes the failed submission chain, namespace-capacity
+chain, scientifically complete but accounting-incomplete chain, and its own
+active allocations. Ruff, Pyright, 106 tests, Bash syntax, and diff checks
+pass.
+
+Inference: One final short CPU replacement is required for a coherent receipt,
+analysis, manifest, read-only export, and complete append-only allocation
+ledger. Corrected MBPP point estimates are already scientifically available
+but remain provisional until that final accounting gate passes.

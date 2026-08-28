@@ -17,6 +17,12 @@ class IceSlurmScriptTests(unittest.TestCase):
         finalizer = (ROOT / "slurm" / "mbpp_rescore_finalize.sbatch").read_text(encoding="utf-8")
         self.assertIn('PROFILE_INDICES="0-45"', submitter)
         self.assertIn("RESCORE_MAX_PARALLEL=8", submitter)
+        self.assertIn("SUPERSEDED_ACCOUNT_JOB_IDS=", submitter)
+        self.assertIn("5596449", submitter)
+        self.assertIn(
+            'ACCOUNT_JOB_IDS="${SUPERSEDED_ACCOUNT_JOB_IDS}:${ACTIVE_ACCOUNT_JOB_IDS}"',
+            submitter,
+        )
         self.assertIn('--array="${PROFILE_INDICES}%${RESCORE_MAX_PARALLEL}"', submitter)
         self.assertIn("aftercorr:${SOURCE_GATE_JOB}", submitter)
         self.assertNotIn("PARENT_FINALIZE_JOB", submitter)
@@ -29,6 +35,8 @@ class IceSlurmScriptTests(unittest.TestCase):
         self.assertIn("wait-source", gate)
         self.assertIn("--profile-index", scorer)
         self.assertIn("sacct -X", finalizer)
+        self.assertIn('SACCT_JOB_IDS="${ACCOUNT_JOB_IDS//:/,}"', finalizer)
+        self.assertIn("validate-accounting", finalizer)
         for text in (doctor, gate, scorer, finalizer):
             self.assertNotIn("#SBATCH --gres", text)
             self.assertNotIn("#SBATCH --account", text)

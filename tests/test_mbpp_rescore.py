@@ -17,6 +17,26 @@ def write_jsonl(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
 
 
 class MBPPRescoreTests(unittest.TestCase):
+    def test_accounting_requires_all_terminal_active_and_superseded_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            raw = Path(temporary) / "sacct.psv"
+            raw.write_text(
+                "1|active|COMPLETED|0:0|10|cpu=2|start|end\n"
+                "2|failed|FAILED|1:0|2|cpu=2|start|end\n"
+                "3|cancelled|CANCELLED by 1|0:0|0||start|end\n",
+                encoding="utf-8",
+            )
+            rescore.validate_accounting(raw, "1:2:3")
+            with self.assertRaisesRegex(rescore.MBPPRescoreError, "missing roots"):
+                rescore.validate_accounting(raw, "1:2:3:4")
+            raw.write_text(
+                raw.read_text(encoding="utf-8")
+                + "4|pending|PENDING|0:0|0||Unknown|Unknown\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(rescore.MBPPRescoreError, "nonterminal"):
+                rescore.validate_accounting(raw, "1:2:3:4")
+
     def test_cli_exposes_cpu_doctor_and_receipt_bound_stages(self) -> None:
         parser = rescore.build_parser()
         self.assertEqual(
