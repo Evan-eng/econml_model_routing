@@ -482,3 +482,24 @@ scientific artifacts, but this run cannot satisfy the frozen 45-arm acceptance
 gate because the failed jobs have left controller state and cannot be requeued
 in place. A fresh exact-SHA replacement chain is required to validate the
 bounded recovery on live allocations and produce a complete accepted run.
+
+[2026-08-28 12:40 EDT] Sealed CUDA-recovery replacement submitted
+
+Observation: Tested commit `c3cb569cf51c3f53a3c7492388c7183c9f91c6df`
+was pushed on `glenn/ice-confirmatory-24h` and sealed under the v3 release root.
+Its release receipt verifies the approved Git origin, full SHA, deployment
+path, and tracked `uv.lock`, `pyproject.toml`, and `slurm` identities.
+
+Action: Submitted run
+`qwen3-8b-confirmatory-20260828T163748Z-c3cb569cf51c` from that exact release.
+The sealed submission receipt binds bootstrap `5595161`, full/smoke preparation
+`5595162`/`5595163`, doctor `5595164`, smoke baseline/array/gate
+`5595165`/`5595166`/`5595167`, full baseline `5595168`, endpoint/remaining
+arrays `5595169`/`5595170`, endpoint report `5595171`, robustness `5595172`,
+analysis `5595173`, finalizer `5595174`, and status jobs `5595175` through
+`5595179`. The prior c229 run remains untouched and becomes accounting-only.
+
+Result: At 12:39 EDT bootstrap and full preparation had completed with exit
+zero; smoke preparation and the GPU doctor were RUNNING. This is verified
+startup evidence, not a smoke or scientific result. The heartbeat now follows
+the c3cb replacement identity and lists the c229 run as accounting-only.
