@@ -790,3 +790,36 @@ syntax, ShellCheck, and `git diff --check`.
 Inference: This was a second deterministic sandbox integration failure, not a
 model, benchmark, OOM, or node result. Reusing release `7674d9170f53` would
 reproduce it; the accepted source adapters still do not require retraining.
+
+[2026-08-28 15:48 EDT] Smoke passed linker and exposed read-only dataset lock
+
+Observation: Recovery
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-robustness-recovery-20260828T194113Z-58aea50cde31`
+under exact release `58aea50cde311a2776e1d3ac902ad98dc0322af8`
+bound the prior failed recovery in its source and submission receipts. Smoke
+`5595624` loaded the adapter, completed Triton CUDA utility compilation through
+the corrected linker alias, and reached offline MATH-500 dataset loading.
+
+Observation: Hugging Face Datasets then attempted to create a cache lock file
+under the deliberately read-only shared cache and failed with `OSError: [Errno
+30] Read-only file system`. No smoke DONE receipt or benchmark result was
+created. Dependent evaluation jobs never ran. The four waiting source gates,
+analysis gate, evaluations, and finalizer were cancelled by exact receipt-listed
+IDs and remain in accounting.
+
+Action: Robustness jobs now copy only the pinned
+`HuggingFaceH4___math-500` and `openai___openai_humaneval` dataset cache trees,
+about 586 KiB total, into a unique writable node-local `$TMPDIR` directory.
+Bubblewrap binds that directory writable, points `HF_DATASETS_CACHE` to it, and
+continues to mount the shared Hugging Face cache read-only. The disposable copy
+is removed after evaluation. Model weights, adapters, the sealed release, and
+the shared experiment tree remain read-only inside the whole-process sandbox.
+
+Verification: New tests prove that only the two pinned datasets are staged and
+that the node-local cache is the only added writable bind. The full release
+gate passed `uv run ruff check .`, `uv run pyright`, `uv run pytest -q` (57
+passed), `uv lock --check`, shell syntax, ShellCheck, and `git diff --check`.
+
+Inference: This is another operational containment mismatch, not a scientific
+result. Node-local staging preserves the intended storage policy and avoids
+shared-cache lock contention when up to 46 evaluations fan out concurrently.

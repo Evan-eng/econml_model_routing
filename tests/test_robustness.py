@@ -11,6 +11,27 @@ from capability_mixture_experiment import result_fingerprints
 
 
 class RobustnessSandboxTests(unittest.TestCase):
+    def test_robustness_cache_stages_only_the_two_pinned_datasets(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shared = root / "shared"
+            scratch = root / "scratch"
+            scratch.mkdir()
+            for name in (
+                "HuggingFaceH4___math-500",
+                "openai___openai_humaneval",
+                "unrelated_large_dataset",
+            ):
+                directory = shared / name
+                directory.mkdir(parents=True)
+                (directory / "state.json").write_text("{}\n", encoding="utf-8")
+
+            staged = robustness.stage_robustness_dataset_cache(shared, scratch)
+
+            self.assertTrue((staged / "HuggingFaceH4___math-500").is_dir())
+            self.assertTrue((staged / "openai___openai_humaneval").is_dir())
+            self.assertFalse((staged / "unrelated_large_dataset").exists())
+
     def test_recovery_smoke_uses_a_separate_output_namespace(self) -> None:
         experiment = Path("/runs/recovery")
 

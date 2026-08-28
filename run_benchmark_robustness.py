@@ -8,8 +8,10 @@ import importlib
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -37,6 +39,35 @@ from robustness_recovery import (
 
 
 DEFAULT_TASKS = "hendrycks_math500,humaneval_instruct"
+ROBUSTNESS_DATASET_CACHE_DIRS = (
+    "HuggingFaceH4___math-500",
+    "openai___openai_humaneval",
+)
+
+
+def stage_robustness_dataset_cache(
+    shared_cache: Path, scratch_root: Path
+) -> Path:
+    """Copy only the two pinned dataset caches to writable node-local storage."""
+    shared_cache = shared_cache.resolve()
+    scratch_root = scratch_root.resolve()
+    if not scratch_root.is_dir():
+        raise FileNotFoundError(f"Node-local scratch is unavailable: {scratch_root}")
+    staged = Path(
+        tempfile.mkdtemp(prefix="routing_hf_datasets_", dir=scratch_root)
+    ).resolve()
+    try:
+        for name in ROBUSTNESS_DATASET_CACHE_DIRS:
+            source = shared_cache / name
+            if not source.is_dir():
+                raise FileNotFoundError(
+                    f"Pinned robustness dataset cache is missing: {source}"
+                )
+            shutil.copytree(source, staged / name)
+    except BaseException:
+        shutil.rmtree(staged)
+        raise
+    return staged
 
 
 def lm_eval_model_args(
@@ -71,6 +102,7 @@ def sandboxed_lm_eval_command(
     hf_home: Path,
     bwrap_path: Path,
     environment: Mapping[str, str],
+    writable_paths: Sequence[Path] = (),
 ) -> list[str]:
     """Wrap lm-eval in the networkless GPU-capable execution boundary."""
     return build_bwrap_command(
@@ -89,6 +121,7 @@ def sandboxed_lm_eval_command(
                 if path and Path(path).is_dir()
             ],
         ],
+        writable_paths=writable_paths,
         device_access=True,
         environment=environment,
     )
@@ -375,6 +408,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if (value := os.environ.get(key)) is not None
     }
     sandbox_environment.setdefault("HF_HOME", str(hf_home))
+    sandbox_environment.setdefault("HF_DATASETS_CACHE", str(hf_home / "datasets"))
     sandbox_environment.setdefault("HF_DATASETS_OFFLINE", "1")
     sandbox_environment.setdefault("HF_HUB_OFFLINE", "1")
     sandbox_environment.setdefault("TRANSFORMERS_OFFLINE", "1")
@@ -428,6 +462,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             inner_command.append("--confirm_run_unsafe_code")
         if args.limit is not None:
             inner_command.extend(["--limit", str(args.limit)])
+        profile_sandbox_environment = dict(sandbox_environment)
+        staged_dataset_cache: Path | None = None
+        if not args.dry_run:
+            scratch_raw = os.environ.get("TMPDIR")
+            if not scratch_raw:
+                raise RuntimeError("Robustness evaluation requires node-local TMPDIR")
+            staged_dataset_cache = stage_robustness_dataset_cache(
+                Path(profile_sandbox_environment["HF_DATASETS_CACHE"]),
+                Path(scratch_raw),
+            )
+            profile_sandbox_environment["HF_DATASETS_CACHE"] = str(
+                staged_dataset_cache
+            )
         command = sandboxed_lm_eval_command(
             inner_command=inner_command,
             experiment_dir=source_experiment_dir,
@@ -437,10 +484,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             base_environment_root=Path(sys.base_prefix),
             hf_home=hf_home,
             bwrap_path=bwrap_path,
-            environment=sandbox_environment,
+            environment=profile_sandbox_environment,
+            writable_paths=(
+                [staged_dataset_cache] if staged_dataset_cache is not None else []
+            ),
         )
         print(shlex.join(command), flush=True)
-        return_code = 0 if args.dry_run else subprocess.run(command, check=False).returncode
+        if args.dry_run:
+            return_code = 0
+        else:
+            try:
+                return_code = subprocess.run(command, check=False).returncode
+            finally:
+                if staged_dataset_cache is not None:
+                    shutil.rmtree(staged_dataset_cache)
         records.append(
             {
                 "profile": profile_name,

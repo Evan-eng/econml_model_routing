@@ -36,6 +36,7 @@ def build_bwrap_command(
     argv: Sequence[str],
     bwrap_path: Path = Path("/usr/bin/bwrap"),
     read_only_paths: Sequence[Path] = (),
+    writable_paths: Sequence[Path] = (),
     device_access: bool = False,
     environment: Mapping[str, str] | None = None,
     inherited_environment: Mapping[str, str] | None = None,
@@ -100,7 +101,7 @@ def build_bwrap_command(
         Path("/tmp"),
     }
     parent_directories: set[Path] = set()
-    for bound_path in [*read_only_paths, work_dir]:
+    for bound_path in [*read_only_paths, *writable_paths, work_dir]:
         for parent in bound_path.resolve().parents:
             if parent == Path("/") or parent in sandbox_roots:
                 continue
@@ -112,6 +113,9 @@ def build_bwrap_command(
     for input_path in read_only_paths:
         resolved = input_path.resolve()
         command.extend(["--ro-bind", str(resolved), str(resolved)])
+    for writable_path in writable_paths:
+        resolved = writable_path.resolve()
+        command.extend(["--bind", str(resolved), str(resolved)])
     command.extend(
         [
             "--bind",

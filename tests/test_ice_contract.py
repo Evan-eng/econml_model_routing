@@ -411,6 +411,23 @@ class CodeSandboxTests(unittest.TestCase):
             ["--ro-bind-try", "/sbin/ldconfig", "/sbin/ldconfig"],
             triples,
         )
+
+    def test_gpu_sandbox_can_bind_disposable_node_local_cache_writable(self) -> None:
+        command = build_bwrap_command(
+            work_dir=Path("/tmp/output"),
+            argv=["/env/bin/lm-eval", "run"],
+            bwrap_path=Path("/usr/bin/bwrap"),
+            writable_paths=[Path("/tmp/job-datasets")],
+            device_access=True,
+        )
+
+        triples = [
+            command[index : index + 3] for index in range(len(command) - 2)
+        ]
+        self.assertIn(
+            ["--bind", "/private/tmp/job-datasets", "/private/tmp/job-datasets"],
+            triples,
+        )
         self.assertIn(
             ["--ro-bind-try", "/etc/ld.so.cache", "/etc/ld.so.cache"],
             triples,
