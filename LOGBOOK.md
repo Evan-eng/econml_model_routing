@@ -208,3 +208,20 @@ acceptable because no confirmatory arm has a DONE receipt and four frozen cells
 remain failed. Forty-one arm allocations were still RUNNING, and robustness,
 analysis, and finalization remained dependency-pending. No scheduler mutation
 was performed.
+
+[2026-08-28 01:40 EDT] Four robustness profiles failed at model construction
+
+Observation: The three seed-11 endpoint arms and baseline reconciled, and
+endpoint-report job `5594360` completed with exit `0:0` and exact-release receipt
+`endpoint_seed_0011.json`. Robustness array tasks `5594361_0` through `_3` then
+each failed with exit `1:0` after 46-47 seconds. Every profile passed the
+bubblewrap launch boundary, selected `cuda:0`, and stopped before checkpoint
+loading with `Qwen3ForCausalLM.__init__() got an unexpected keyword argument
+'dtype'`. The sealed command supplied `dtype=bfloat16` through lm-eval 0.4.10.
+
+Inference: This is a deterministic runtime/interface exception in the frozen
+robustness launcher, not PREEMPTED, NODE_FAIL, a time-limit exit, OOM, or a
+sandbox failure. No robustness retry was submitted. At the snapshot, 38 of 45
+arm receipts existed, three arms were still RUNNING, the four previously
+diagnosed arm failures remained unchanged, and analysis/finalization were still
+dependency-blocked.
