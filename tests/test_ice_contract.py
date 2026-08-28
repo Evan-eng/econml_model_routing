@@ -445,7 +445,12 @@ class CodeSandboxTests(unittest.TestCase):
 
     def test_mbpp_execution_requires_and_uses_bwrap(self) -> None:
         row = {"test_imports": [], "test_list": ["assert add(1, 2) == 3"]}
-        completed = mock.Mock(returncode=0, stderr="")
+
+        def completed_run(command: list[str], **_: object) -> mock.Mock:
+            Path(command[-2]).write_text("ready\n", encoding="ascii")
+            Path(command[-1]).write_text("pass\n", encoding="ascii")
+            return mock.Mock(returncode=0, stderr=None)
+
         with (
             mock.patch.object(
                 experiment,
@@ -453,7 +458,7 @@ class CodeSandboxTests(unittest.TestCase):
                 return_value=Path("/usr/bin/bwrap"),
                 create=True,
             ),
-            mock.patch.object(experiment.subprocess, "run", return_value=completed) as run,
+            mock.patch.object(experiment.subprocess, "run", side_effect=completed_run) as run,
         ):
             correct, reason = experiment.score_mbpp_candidate(
                 "def add(a, b):\n    return a + b",
@@ -467,6 +472,79 @@ class CodeSandboxTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(command[0], "/usr/bin/bwrap")
         self.assertIn("--unshare-all", command)
+        self.assertIn("--", command)
+        self.assertIn(experiment.MBPP_SANDBOX_RUNNER, command)
+        self.assertNotIn("preexec_fn", run.call_args.kwargs)
+        self.assertIsNot(run.call_args.kwargs["stderr"], experiment.subprocess.PIPE)
+
+    def test_mbpp_candidate_stderr_cannot_forge_an_operational_failure(self) -> None:
+        row = {"test_imports": [], "test_list": ["assert True"]}
+
+        def candidate_failure(command: list[str], **_: object) -> mock.Mock:
+            Path(command[-2]).write_text("ready\n", encoding="ascii")
+            return mock.Mock(
+                returncode=experiment.MBPP_SANDBOX_CANDIDATE_EXIT,
+                stderr="bwrap: candidate-controlled text\n",
+            )
+
+        with (
+            mock.patch.object(experiment, "require_bwrap", return_value=Path("/usr/bin/bwrap")),
+            mock.patch.object(experiment.subprocess, "run", side_effect=candidate_failure),
+        ):
+            correct, reason = experiment.score_mbpp_candidate(
+                'raise RuntimeError("bwrap: candidate-controlled text")',
+                row,
+                allow_execution=True,
+                code_sandbox="bwrap",
+                operational_failures_raise=True,
+            )
+        self.assertFalse(correct)
+        self.assertIn("candidate-controlled", reason)
+
+    def test_mbpp_validator_blocks_private_stdlib_exit_escape(self) -> None:
+        valid, reason = experiment.validate_generated_code(
+            "import random\nrandom._os._exit(0)"
+        )
+        self.assertFalse(valid)
+        self.assertIn("blocked_private", reason)
+
+    def test_mbpp_validator_blocks_dynamic_attribute_escape_helpers(self) -> None:
+        payloads = [
+            (
+                "import typing\n"
+                "def f(x: \"__import__('os')._exit(0)\"):\n    pass\n"
+                "typing.get_type_hints(f)"
+            ),
+            (
+                "import string, random\n"
+                "f = string.Formatter()\n"
+                "o = f.get_field('0._os', (random,), {})[0]"
+            ),
+            "import random\ng = getattr\no = g(random, '_os')",
+        ]
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                valid, _ = experiment.validate_generated_code(payload)
+                self.assertFalse(valid)
+
+    def test_mbpp_sandbox_failure_is_operational_when_requested(self) -> None:
+        row = {"test_imports": [], "test_list": ["assert True"]}
+        completed = mock.Mock(
+            returncode=1,
+            stderr="bwrap: Creating new namespace failed: Resource temporarily unavailable\n",
+        )
+        with (
+            mock.patch.object(experiment, "require_bwrap", return_value=Path("/usr/bin/bwrap")),
+            mock.patch.object(experiment.subprocess, "run", return_value=completed),
+            self.assertRaises(experiment.MBPPSandboxOperationalError),
+        ):
+            experiment.score_mbpp_candidate(
+                "def add(a, b):\n    return a + b",
+                row,
+                allow_execution=True,
+                code_sandbox="bwrap",
+                operational_failures_raise=True,
+            )
 
 
 class CheckpointTests(unittest.TestCase):

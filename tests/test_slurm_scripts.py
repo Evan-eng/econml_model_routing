@@ -9,6 +9,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class IceSlurmScriptTests(unittest.TestCase):
+    def test_mbpp_rescore_uses_cpu_doctor_and_46_way_array(self) -> None:
+        submitter = (ROOT / "slurm" / "submit_mbpp_rescore.sh").read_text(encoding="utf-8")
+        doctor = (ROOT / "slurm" / "mbpp_rescore_doctor.sbatch").read_text(encoding="utf-8")
+        gate = (ROOT / "slurm" / "mbpp_rescore_source_gate.sbatch").read_text(encoding="utf-8")
+        scorer = (ROOT / "slurm" / "mbpp_rescore.sbatch").read_text(encoding="utf-8")
+        finalizer = (ROOT / "slurm" / "mbpp_rescore_finalize.sbatch").read_text(encoding="utf-8")
+        self.assertIn('PROFILE_INDICES="0-45"', submitter)
+        self.assertIn('--array="${PROFILE_INDICES}%46"', submitter)
+        self.assertIn("aftercorr:${SOURCE_GATE_JOB}", submitter)
+        self.assertIn("afterok:${PARENT_FINALIZE_JOB}", submitter)
+        self.assertIn("sandbox-doctor", doctor)
+        self.assertIn("wait-source", gate)
+        self.assertIn("--profile-index", scorer)
+        self.assertIn("sacct -X", finalizer)
+        for text in (doctor, gate, scorer, finalizer):
+            self.assertNotIn("#SBATCH --gres", text)
+            self.assertNotIn("#SBATCH --account", text)
+            self.assertNotIn("#SBATCH --partition", text)
+
     def test_math500_rescore_uses_46_way_cpu_array_and_parent_finalizer(self) -> None:
         submitter = (ROOT / "slurm" / "submit_math500_rescore.sh").read_text(encoding="utf-8")
         parent_gate = (ROOT / "slurm" / "math500_rescore_parent_gate.sbatch").read_text(

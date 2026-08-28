@@ -234,27 +234,40 @@ SAFE_IMPORT_ROOTS = {
     "heapq",
     "itertools",
     "math",
-    "operator",
     "random",
     "re",
     "statistics",
-    "string",
-    "typing",
 }
 BANNED_CALL_NAMES = {
+    "attrgetter",
     "breakpoint",
     "compile",
+    "delattr",
     "eval",
     "exec",
     "exit",
     "globals",
+    "getattr",
     "help",
     "input",
     "locals",
+    "methodcaller",
     "open",
     "quit",
+    "setattr",
     "vars",
     "__import__",
+}
+BANNED_ATTRIBUTE_NAMES = {"attrgetter", "methodcaller", "modules", "os", "sys"}
+BANNED_GLOBAL_NAMES = {"builtins", "os", "pathlib", "socket", "subprocess", "sys"}
+BANNED_PRIVATE_STRINGS = {
+    "__builtins__",
+    "__class__",
+    "__dict__",
+    "__import__",
+    "_exit",
+    "_os",
+    "_sys",
 }
 
 
@@ -1669,38 +1682,94 @@ def validate_generated_code(code: str) -> tuple[bool, str]:
     except SyntaxError as exc:
         return False, f"syntax:{exc.msg}"
     for node in ast.walk(tree):
+        if isinstance(node, ast.arg) and isinstance(node.annotation, ast.Constant) and isinstance(
+            node.annotation.value, str
+        ):
+            return False, "blocked_string_annotation"
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and isinstance(
+            node.returns, ast.Constant
+        ) and isinstance(node.returns.value, str):
+            return False, "blocked_string_annotation"
+        if isinstance(node, ast.AnnAssign) and isinstance(
+            node.annotation, ast.Constant
+        ) and isinstance(node.annotation.value, str):
+            return False, "blocked_string_annotation"
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name.split(".")[0] not in SAFE_IMPORT_ROOTS:
                     return False, f"blocked_import:{alias.name}"
+                if alias.asname and alias.asname.startswith("_"):
+                    return False, f"blocked_private:{alias.asname}"
         elif isinstance(node, ast.ImportFrom):
             root = (node.module or "").split(".")[0]
             if root not in SAFE_IMPORT_ROOTS:
                 return False, f"blocked_import:{node.module}"
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            if node.func.id in BANNED_CALL_NAMES:
-                return False, f"blocked_call:{node.func.id}"
-        elif isinstance(node, ast.Name) and node.id.startswith("__"):
-            return False, f"blocked_dunder:{node.id}"
-        elif isinstance(node, ast.Attribute) and node.attr.startswith("__"):
-            return False, f"blocked_dunder:{node.attr}"
+            for alias in node.names:
+                if (
+                    alias.name.startswith("_")
+                    or alias.name in BANNED_ATTRIBUTE_NAMES
+                    or (alias.asname and alias.asname.startswith("_"))
+                ):
+                    return False, f"blocked_private:{alias.name}"
+        elif isinstance(node, ast.Name) and (
+            node.id.startswith("__")
+            or node.id in BANNED_CALL_NAMES
+            or node.id in BANNED_GLOBAL_NAMES
+        ):
+            return False, f"blocked_name:{node.id}"
+        elif isinstance(node, ast.Attribute) and (
+            node.attr.startswith("_") or node.attr in BANNED_ATTRIBUTE_NAMES
+        ):
+            return False, f"blocked_private:{node.attr}"
+        elif isinstance(node, ast.Constant) and node.value in BANNED_PRIVATE_STRINGS:
+            return False, f"blocked_private_string:{node.value}"
     return True, "ok"
 
 
-def resource_limiter() -> None:
-    """Best-effort POSIX limits for generated-code subprocesses."""
-    try:
-        import resource
+MBPP_SANDBOX_LIMITS: tuple[tuple[str, int], ...] = (
+    ("RLIMIT_CPU", 3),
+    ("RLIMIT_FSIZE", 1_000_000),
+    ("RLIMIT_NOFILE", 32),
+    ("RLIMIT_NPROC", 1),
+    ("RLIMIT_AS", 768_000_000),
+)
+MBPP_SANDBOX_SETUP_PREFIX = "MBPP_SANDBOX_SETUP_ERROR:"
+MBPP_SANDBOX_CANDIDATE_PREFIX = "MBPP_CANDIDATE_ERROR:"
+MBPP_SANDBOX_CANDIDATE_EXIT = 74
+MBPP_SANDBOX_SETUP_EXIT = 75
+MBPP_SANDBOX_RUNNER = """import resource, runpy, sys
+LIMITS = {limits!r}
+script_path, setup_path, pass_path = sys.argv[1:]
+sys.argv = [script_path]
+try:
+    for name, value in LIMITS:
+        limit = getattr(resource, name)
+        resource.setrlimit(limit, (value, value))
+        if resource.getrlimit(limit) != (value, value):
+            raise RuntimeError(f"{{name}}={{resource.getrlimit(limit)!r}}")
+    with open(setup_path, "x", encoding="ascii") as marker:
+        marker.write("ready\\n")
+except BaseException as exc:
+    sys.stderr.write({prefix!r} + repr(exc) + "\\n")
+    raise SystemExit({setup_exit})
+try:
+    runpy.run_path(script_path, run_name="__main__")
+except BaseException as exc:
+    sys.stderr.write({candidate_prefix!r} + repr(exc) + "\\n")
+    raise SystemExit({candidate_exit})
+with open(pass_path, "x", encoding="ascii") as marker:
+    marker.write("pass\\n")
+""".format(
+    limits=MBPP_SANDBOX_LIMITS,
+    prefix=MBPP_SANDBOX_SETUP_PREFIX,
+    setup_exit=MBPP_SANDBOX_SETUP_EXIT,
+    candidate_prefix=MBPP_SANDBOX_CANDIDATE_PREFIX,
+    candidate_exit=MBPP_SANDBOX_CANDIDATE_EXIT,
+)
 
-        resource.setrlimit(resource.RLIMIT_CPU, (3, 3))
-        resource.setrlimit(resource.RLIMIT_FSIZE, (1_000_000, 1_000_000))
-        resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
-        if hasattr(resource, "RLIMIT_NPROC"):
-            resource.setrlimit(resource.RLIMIT_NPROC, (1, 1))
-        if hasattr(resource, "RLIMIT_AS"):
-            resource.setrlimit(resource.RLIMIT_AS, (768_000_000, 768_000_000))
-    except Exception:
-        pass
+
+class MBPPSandboxOperationalError(RuntimeError):
+    """Raised when containment fails before a candidate can execute."""
 
 
 def score_mbpp_candidate(
@@ -1708,6 +1777,8 @@ def score_mbpp_candidate(
     row: Mapping[str, Any],
     allow_execution: bool,
     code_sandbox: str | None = None,
+    *,
+    operational_failures_raise: bool = False,
 ) -> tuple[bool | None, str]:
     code = extract_code(candidate)
     valid, reason = validate_generated_code(code)
@@ -1725,29 +1796,74 @@ def score_mbpp_candidate(
     harness = f"{imports}\n{code}\n{tests}\n"
     with tempfile.TemporaryDirectory(prefix="mbpp_eval_") as temporary:
         script = Path(temporary) / "candidate.py"
+        marker_token = hashlib.sha256(os.urandom(32)).hexdigest()
+        setup_marker = Path(temporary) / f".{marker_token}.setup"
+        pass_marker = Path(temporary) / f".{marker_token}.pass"
         script.write_text(harness, encoding="utf-8")
+        timed_out = False
+        completed: subprocess.CompletedProcess[str] | None = None
         try:
             command = build_bwrap_command(
                 work_dir=Path(temporary),
-                argv=["/usr/bin/python3", "-I", "-S", str(script)],
+                argv=[
+                    "/usr/bin/python3",
+                    "-I",
+                    "-S",
+                    "-c",
+                    MBPP_SANDBOX_RUNNER,
+                    str(script),
+                    str(setup_marker),
+                    str(pass_marker),
+                ],
                 bwrap_path=bwrap_path,
             )
-            completed = subprocess.run(
-                command,
-                cwd=temporary,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                timeout=5,
-                check=False,
-                preexec_fn=resource_limiter if os.name == "posix" else None,
-                text=True,
-            )
+            with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stderr_file:
+                completed = subprocess.run(
+                    command,
+                    cwd=temporary,
+                    stdout=subprocess.DEVNULL,
+                    stderr=stderr_file,
+                    timeout=5,
+                    check=False,
+                    text=True,
+                )
+                stderr_file.flush()
+                stderr_file.seek(0, os.SEEK_END)
+                stderr_file.seek(max(0, stderr_file.tell() - 8192))
+                captured_stderr = stderr_file.read()
         except subprocess.TimeoutExpired:
-            return False, "timeout"
-    if completed.returncode == 0:
+            timed_out = True
+            captured_stderr = ""
+        setup_ready = (
+            setup_marker.read_text(encoding="ascii") == "ready\n"
+            if setup_marker.is_file()
+            else False
+        )
+        pass_ready = (
+            pass_marker.read_text(encoding="ascii") == "pass\n"
+            if pass_marker.is_file()
+            else False
+        )
+    if timed_out and setup_ready:
+        return False, "timeout"
+    if (
+        not timed_out
+        and setup_ready
+        and pass_ready
+        and completed is not None
+        and completed.returncode == 0
+    ):
         return True, "pass"
-    error = (completed.stderr or "").strip().splitlines()
-    return False, f"runtime:{error[-1][:160] if error else completed.returncode}"
+    completed_stderr = completed.stderr if completed is not None else None
+    stderr = completed_stderr if isinstance(completed_stderr, str) else captured_stderr
+    if not setup_ready or pass_ready:
+        message = stderr.strip().splitlines()[-1][:160] if stderr.strip() else "unknown"
+        if operational_failures_raise:
+            raise MBPPSandboxOperationalError(message)
+        return False, f"sandbox:{message}"
+    error = stderr.strip().splitlines()
+    return_code = completed.returncode if completed is not None else "unknown"
+    return False, f"runtime:{error[-1][:160] if error else return_code}"
 
 
 def evaluate_model(

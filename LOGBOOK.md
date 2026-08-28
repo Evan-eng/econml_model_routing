@@ -1128,3 +1128,42 @@ Inference: Submission is complete, but result acceptance is not. The next
 gates are all 46 corrected profile receipts, the parent recovery final receipt
 and manifest, the corrected exact manifest, allocation ledgers, and verified
 read-only permissions.
+
+[2026-08-28 19:11 EDT] MBPP failure isolated and receipt-bound CPU recovery prepared
+
+Observation: Reconciliation across all 46 accepted source prediction files
+found 11,822 frozen MBPP rows. Of these, 11,671 admitted candidates failed
+before candidate execution with bubblewrap reporting `Creating new namespace
+failed: Resource temporarily unavailable`; the other 151 were static rejects.
+The scorer installed `RLIMIT_NPROC=(1,1)` in `preexec_fn` before bubblewrap
+created its namespaces, while the generic doctor launched bubblewrap without
+that outer limiter. The legacy MBPP values and every analysis result depending
+on them are therefore retained but labeled invalid.
+
+Observation: The recovery keeps the accepted raw generations, adapters, and
+the frozen 257-row evaluation cache unchanged. It launches bubblewrap before
+installing and verifying hard CPU, file-size, file-descriptor, process-count,
+and address-space limits inside a sealed runner. The exact scoring-path doctor
+proves network, home, source-tree, and fork denial. Candidate setup failures
+are operational and profile-fatal; candidate exceptions, deaths, and timeouts
+after setup are scientific incorrect outcomes. No GPU work or retraining is
+required.
+
+Observation: The new CPU-only chain freezes the exact source receipt roster,
+all source DONE and prediction digests, the evaluation-cache digest, and the
+accepted corrected-MATH final export. It runs one doctor, 46 independent source
+gates, 46 independent rescores, corrected analysis with 2,000 bootstraps, and
+one fail-closed read-only export finalizer. It preserves legacy outputs and
+publishes corrected MBPP artifacts separately with nested manifests and full
+producer lineage.
+
+Observation: Two independent rereviews found no blocking specification or
+provenance issue after repair. Local verification passed Ruff, Pyright, all
+105 tests, Bash syntax, and `git diff --check`. Standing authority covers the
+topic-branch commit and push, exact-SHA deployment, and submission of this
+bounded recovery chain without another approval boundary.
+
+Inference: The implementation is ready for the final containment rereview,
+then exact-SHA publication and ICE submission. Completion remains unproven
+until all 46 corrected profile receipts, corrected analysis, allocation-only
+accounting, final manifest, and read-only export reconcile.
