@@ -30,6 +30,10 @@ class IceSlurmScriptTests(unittest.TestCase):
         for offset in (4, 12, 20, 24, 48):
             self.assertIn(f'--begin="now+{offset}hours"', text)
         self.assertIn("status_snapshot.sbatch", text)
+        self.assertIn(
+            'GPU_DOCTOR_JOB="$(submit_job --dependency="afterok:${FULL_PREP_JOB}"',
+            text,
+        )
 
     def test_release_cleanliness_checks_ignore_v3_sealing_modes_only(self) -> None:
         for name in (

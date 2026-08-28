@@ -130,3 +130,19 @@ read-only inputs, and sole writable candidate/output directory remain intact.
 Nineteen tests, Ruff, Pyright, and Slurm syntax checks pass. The replacement
 chain's downstream work did not start and must be superseded by another exact
 release and fresh run contract.
+
+[2026-08-27 22:41 EDT] GPU doctor preparation dependency race
+
+Context: Release `5f3a665179fc5f64ba5789b2fe7c5dda0a4df79d` was
+submitted as run `qwen3-8b-confirmatory-20260828T023910Z-5f3a665179fc`.
+Bootstrap completed, but doctor `5594326` started before full preparation had
+created `provenance.json` and failed at the run-contract gate. Full preparation
+later completed successfully in 1:10.
+
+Action: Added the missing `afterok:${FULL_PREP_JOB}` edge to the GPU doctor and
+a structural test that locks this producer-consumer dependency into the sealed
+submitter.
+
+Result: The failed job did not reach bubblewrap, and no smoke or confirmatory
+work started. Nineteen tests, Ruff, Pyright, and Slurm syntax checks pass. This
+chain will be retained for accounting and superseded by a fresh exact release.

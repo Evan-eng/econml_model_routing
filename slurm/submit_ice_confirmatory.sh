@@ -87,7 +87,7 @@ SMOKE_PREP_JOB="$(submit_job --dependency="afterok:${BOOTSTRAP_JOB}" \
 FULL_PREP_JOB="$(submit_job --dependency="afterok:${BOOTSTRAP_JOB}" \
   --export="${full_exports}" --output="${LOG_DIR}/full_prep_%j.out" \
   --error="${LOG_DIR}/full_prep_%j.err" "${RELEASE_DIR}/slurm/prepare.sbatch")"
-GPU_DOCTOR_JOB="$(submit_job --dependency="afterok:${BOOTSTRAP_JOB}" \
+GPU_DOCTOR_JOB="$(submit_job --dependency="afterok:${FULL_PREP_JOB}" \
   --export="${full_exports}" --output="${LOG_DIR}/gpu_doctor_%j.out" \
   --error="${LOG_DIR}/gpu_doctor_%j.err" "${RELEASE_DIR}/slurm/gpu_doctor.sbatch")"
 
