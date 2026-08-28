@@ -294,3 +294,29 @@ Inference: These changes address both deterministic failure signatures without
 changing the frozen design, model or dataset revisions, attempt policy, or
 sandbox write boundary. A same-model compute-node smoke remains the required
 operational proof before the complete replacement fan-out.
+
+[2026-08-28 11:15 EDT] Corrected release deployed and replacement chain submitted
+
+Observation: Topic-branch SHA
+`2843dc350de2a5eb154af1e833687d8437587796` was pushed to the approved origin,
+sealed under
+`/storage/ice-shared/cs7634/staff/econml/releases/econml_model_routing_v3`,
+and verified by its `pace-code-release-v3` receipt. The fresh run is
+`qwen3-8b-confirmatory-20260828T151445Z-2843dc350de2`. Its submission receipt
+binds bootstrap `5594908`, smoke/full preparation `5594909`/`5594910`, GPU
+doctor `5594911`, smoke baseline/array/gate `5594912`/`5594913`/`5594914`, full
+baseline `5594915`, endpoint/remaining arrays `5594916`/`5594917`, endpoint
+report `5594918`, robustness `5594919`, analysis `5594920`, finalizer `5594921`,
+and status jobs `5594922` through `5594926` to the same executor and coordinator
+release.
+
+Action: Submitted the complete smoke-gated baseline, 45-arm, four-profile
+robustness, analysis, finalization, and scheduled-status dependency chain with
+`MAX_PARALLEL=45`. Restored a 30-minute exact-run heartbeat carrying the
+persistent authority, failure-recovery policy, accounting rules, and
+superseded-run exclusions.
+
+Result: At the first queue snapshot, bootstrap `5594908` was RUNNING and the
+scientific jobs were PENDING on their declared dependencies. This is verified
+submission and queue evidence only; preparation, GPU doctor, smoke, full-grid,
+robustness, analysis, and export acceptance remain pending receipts.
