@@ -939,3 +939,28 @@ Inference: The generated-code containment and both benchmark executions now
 work end to end on an ICE H100. The remaining defect is artifact naming across
 the pinned lm-eval release, not a scientific, model, sandbox, OOM, or node
 failure. Accepted source adapters remain reusable without retraining.
+
+[2026-08-28 16:21 EDT] Receipt-backed smoke passed and 43 production profiles fanned out
+
+Observation: Recovery
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-robustness-recovery-20260828T201706Z-aae927901acf`
+under exact release `aae927901acf251c93710fbb0a6d1b20cfa55102`
+produced a reconciled smoke DONE receipt after `5595932` completed with exit 0
+in 1:55 on an H100. The receipt binds the source adapter release, pinned metric
+preparation release, CUDA sandbox-doctor release, source-ready release, exact
+run fingerprints, and canonical result checksum. This is an operational smoke
+receipt; its limit-1 scores are not scientific results.
+
+Observation: The successful smoke released the production fan-out. At the
+receipt snapshot, 43 one-GPU production profile allocations were RUNNING, zero
+production profile DONE receipts existed, and the finalizer remained
+dependency-pending. The source run had one baseline plus 42 of 45 arm DONE
+receipts; three source arms remained RUNNING, and source analysis remained
+dependency-pending. No unrelated job was modified.
+
+Inference: The recovery is no longer blocked on implementation or launch
+infrastructure. Forty-three profiles can evaluate immediately while the last
+three profile-specific gates wait for their accepted source adapters. Full
+completion still requires all 46 production DONE receipts, the source's 45-arm
+analysis receipt, the combined final manifest, allocation-only accounting, and
+the read-only export.
