@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import io
 import re
 import shutil
 import stat
@@ -69,22 +70,42 @@ def write_accounting(raw_path: Path, output_dir: Path) -> None:
     rows = parse_sacct_rows(raw_path.read_text(encoding="utf-8"))
     output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = output_dir / "gpu_hours_ledger.csv"
-    with csv_path.open("x", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]) if rows else ["job_id"])
-        writer.writeheader()
-        writer.writerows(rows)
-    write_json(
-        output_dir / "compute_summary.json",
-        {
-            "created_at_utc": utc_now(),
-            "allocation_rows": len(rows),
-            "total_gpu_hours": sum(float(row["gpu_hours"]) for row in rows),
-            "states": {
-                state: sum(row["state"] == state for row in rows)
-                for state in sorted({str(row["state"]) for row in rows})
-            },
-        },
+    csv_buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(
+        csv_buffer,
+        fieldnames=list(rows[0]) if rows else ["job_id"],
+        lineterminator="\n",
     )
+    writer.writeheader()
+    writer.writerows(rows)
+    expected_csv = csv_buffer.getvalue()
+    if csv_path.exists():
+        if csv_path.read_text(encoding="utf-8") != expected_csv:
+            raise RuntimeError("Refusing to replace existing accounting CSV")
+    else:
+        csv_path.write_text(expected_csv, encoding="utf-8", newline="")
+    summary_path = output_dir / "compute_summary.json"
+    expected_summary = {
+        "allocation_rows": len(rows),
+        "total_gpu_hours": sum(float(row["gpu_hours"]) for row in rows),
+        "states": {
+            state: sum(row["state"] == state for row in rows)
+            for state in sorted({str(row["state"]) for row in rows})
+        },
+    }
+    if summary_path.exists():
+        existing_summary = read_json(summary_path)
+        if (
+            not isinstance(existing_summary.get("created_at_utc"), str)
+            or not existing_summary["created_at_utc"]
+            or any(existing_summary.get(key) != value for key, value in expected_summary.items())
+        ):
+            raise RuntimeError("Refusing to replace existing accounting summary")
+    else:
+        write_json(
+            summary_path,
+            {"created_at_utc": utc_now(), **expected_summary},
+        )
 
 
 def write_submission_receipt(

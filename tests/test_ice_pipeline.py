@@ -8,11 +8,36 @@ from pathlib import Path
 from ice_pipeline import (
     parse_sacct_rows,
     validated_terminal_release,
+    write_accounting,
     write_submission_receipt,
 )
 
 
 class ComputeAccountingTests(unittest.TestCase):
+    def test_accounting_retry_validates_existing_append_only_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            raw = root / "sacct_raw.psv"
+            output = root / "ledger"
+            raw.write_text(
+                "123|rescore|COMPLETED|0:0|60|cpu=2|2026-08-28T00:00:00|2026-08-28T00:01:00\n",
+                encoding="utf-8",
+            )
+
+            write_accounting(raw, output)
+            first_csv = (output / "gpu_hours_ledger.csv").read_bytes()
+            first_summary = (output / "compute_summary.json").read_bytes()
+            write_accounting(raw, output)
+
+            self.assertEqual((output / "gpu_hours_ledger.csv").read_bytes(), first_csv)
+            self.assertEqual((output / "compute_summary.json").read_bytes(), first_summary)
+            raw.write_text(
+                "123|rescore|FAILED|1:0|60|cpu=2|2026-08-28T00:00:00|2026-08-28T00:01:00\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(RuntimeError, "existing accounting"):
+                write_accounting(raw, output)
+
     def test_extension_submission_receipt_names_source_inputs_and_gate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -39,9 +64,7 @@ class ComputeAccountingTests(unittest.TestCase):
             )
 
             receipt = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual(
-                receipt["input_producer_releases"], ["source-submission-release"]
-            )
+            self.assertEqual(receipt["input_producer_releases"], ["source-submission-release"])
             self.assertEqual(
                 receipt["pre_side_effect_release_gate"],
                 "submit_exploratory_robustness.sh",

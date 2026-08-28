@@ -1051,3 +1051,44 @@ Inference: The source critical path is expected near 17:15 EDT based on the
 neighboring code-evaluation duration. The first robustness wave is expected to
 reach generation completion near 17:18 EDT before final scoring and receipt
 writing. Both estimates are operational projections, not completion evidence.
+
+[2026-08-28 18:11 EDT] Source accepted; robustness at 42 of 46; corrected MATH scorer prepared
+
+Observation: Source allocation `5595271` completed at 17:21:45 EDT after
+4:23:59 and emitted the final missing `z_0p3750/seed_0011` terminal receipt.
+The source run now has its baseline, all 45 unique arm DONE receipts, and an
+analysis DONE receipt from allocation `5595242`. This is receipt-level source
+and analysis completeness; it is not yet a combined export acceptance claim.
+
+Observation: At 18:01:13 EDT the active exact-SHA robustness recovery had 42
+of 46 profile DONE receipts. Allocations `5595935_1`, `5595935_4`,
+`5595935_15`, and `5595935_28` remained RUNNING, finalizer `5595936` remained
+dependency-pending, and allocation-only `sacct -X` showed no failed or
+cancelled production row. No recovery FINALIZED receipt or export existed at
+that snapshot.
+
+Observation: Inspection of accepted raw MATH-500 samples proved that the
+lm-eval 0.4.10 legacy `routing_math500` string metric rejects correct
+explanatory responses without extracting their final mathematical answers.
+The original field is therefore retained with status `invalid`; HumanEval and
+the raw MATH generations remain valid inputs and no GPU work was cancelled.
+
+Observation: A CPU-only exact-SHA extension now freezes `math-verify==0.9.0`,
+validates all 500 source rows and full receipt lineage, uses list-based
+`any_match` extraction, records unparseable predictions as audited incorrect,
+and records verification timeouts as unresolved. The local frozen-sample probe
+found 174 confirmed correct, 499 resolved, a resolved-only rate of
+0.3486973948, and a full-sample sensitivity interval of 0.348 to 0.350; this is
+implementation evidence only, not a published experiment result.
+
+Observation: The rescore extension uses a 46-way CPU array, consumes the
+accepted parent adapters and raw evaluation artifacts without retraining, and
+publishes its terminal receipt only after an atomic read-only export passes
+manifest reconciliation. Local gates passed: Ruff, Pyright, 92 tests, Bash
+syntax, and diff checks. Independent re-review remains the final publication
+gate before commit, push, exact-SHA deployment, and submission.
+
+Inference: The four remaining GPU profiles and the CPU rescore release are
+independent critical paths. Continuing both in parallel minimizes wall time;
+neither current scheduler state nor the local probe proves final experiment
+acceptance.
