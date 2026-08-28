@@ -3481,6 +3481,11 @@ def build_parser() -> argparse.ArgumentParser:
     prepare = sub.add_parser("prepare", help="lock revisions and cache decontaminated data")
     prepare.add_argument("--experiment-dir", required=True)
     prepare.add_argument("--force", action="store_true")
+    prepare.add_argument(
+        "--skip-python-finalization",
+        action="store_true",
+        help="exit immediately after successful atomic writes on affected ICE workers",
+    )
 
     warm = sub.add_parser(
         "warm-cache",
@@ -3588,6 +3593,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             create_design(args)
         elif args.command == "prepare":
             prepare_data(args)
+            if args.skip_python_finalization:
+                sys.stdout.flush()
+                sys.stderr.flush()
+                os._exit(0)
         elif args.command == "warm-cache":
             warm_model_cache(args)
         elif args.command == "evaluate-baseline":

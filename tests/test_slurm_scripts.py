@@ -50,6 +50,13 @@ class IceSlurmScriptTests(unittest.TestCase):
             self.assertIn("git -c core.fileMode=false -C", text, name)
             self.assertIn("status --porcelain --untracked-files=all", text, name)
 
+    def test_prepare_worker_skips_only_successful_python_finalization(self) -> None:
+        text = (ROOT / "slurm" / "prepare.sbatch").read_text(encoding="utf-8")
+
+        self.assertIn("prepare \\", text)
+        self.assertIn("--skip-python-finalization", text)
+        self.assertIn("warm-cache", text)
+
 
 if __name__ == "__main__":
     unittest.main()

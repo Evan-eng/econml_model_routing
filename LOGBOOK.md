@@ -348,3 +348,34 @@ Inference: Run `qwen3-8b-confirmatory-20260828T151445Z-2843dc350de2` is
 terminally incomplete and becomes accounting-only. A fresh exact-SHA release
 and run contract are required; its completed full-preparation and doctor
 receipts are not reused across the release boundary.
+
+[2026-08-28 11:24 EDT] Smoke finalization abort reproduced without concurrency
+
+Observation: Serialized run
+`qwen3-8b-confirmatory-20260828T152037Z-b55d30cea848` completed bootstrap
+`5594938`, full preparation `5594939`, and GPU doctor `5594941` with exit zero.
+Smoke preparation `5594940` then reproduced the same exit `134:0` after 44
+seconds, despite running after full preparation. This falsifies the shared
+concurrency hypothesis and localizes the failure to CPython extension cleanup
+after the smaller streaming preparation returns successfully. Smoke jobs
+`5594942` and `5594943` became `DependencyNeverSatisfied`; no scientific GPU
+work started.
+
+Action: Added an ICE-only `--skip-python-finalization` option. It calls
+`os._exit(0)` only after `prepare_data` returns, stdout/stderr are flushed, and
+all cache/provenance writes have completed through the existing atomic,
+fsynced writers. Any exception before successful return still follows the
+normal nonzero fail-closed path. The Slurm preparation worker opts into this
+boundary; model warming and the preparation receipt remain a separate fresh
+Python process and therefore continue to validate the sealed artifacts before
+downstream work.
+
+Verification: Two red-green regression tests prove that only successful
+preparation takes the hard-exit path and that the sealed Slurm worker requests
+it before the separately receipted warm-cache stage. Ruff, Pyright, 26 Pytest
+tests, Slurm shell syntax, `uv lock --check`, and `git diff --check` pass.
+
+Inference: Run `qwen3-8b-confirmatory-20260828T152037Z-b55d30cea848` is
+terminally incomplete and becomes accounting-only. A fresh exact-SHA run is
+required; no application-abort requeue or dependency rewrite is authorized or
+performed.

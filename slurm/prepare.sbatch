@@ -17,6 +17,7 @@ validate_stage_release
 unset HF_HUB_OFFLINE HF_DATASETS_OFFLINE TRANSFORMERS_OFFLINE
 
 srun python "${RELEASE_DIR}/capability_mixture_experiment.py" prepare \
-  --experiment-dir "${EXPERIMENT_DIR}"
+  --experiment-dir "${EXPERIMENT_DIR}" \
+  --skip-python-finalization
 srun python "${RELEASE_DIR}/capability_mixture_experiment.py" warm-cache \
   --experiment-dir "${EXPERIMENT_DIR}"

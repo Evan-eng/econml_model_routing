@@ -12,6 +12,24 @@ from ice_contract import ContractError, create_run_contract, validate_run_contra
 
 
 class RunContractTests(unittest.TestCase):
+    def test_prepare_can_skip_broken_interpreter_finalization_after_success(self) -> None:
+        with (
+            mock.patch.object(experiment, "prepare_data") as prepare,
+            mock.patch.object(experiment.os, "_exit") as hard_exit,
+        ):
+            result = experiment.main(
+                [
+                    "prepare",
+                    "--experiment-dir",
+                    "/storage/experiment",
+                    "--skip-python-finalization",
+                ]
+            )
+
+        prepare.assert_called_once()
+        hard_exit.assert_called_once_with(0)
+        self.assertEqual(result, 0)
+
     def test_cli_exposes_contract_creation(self) -> None:
         args = experiment.build_parser().parse_args(
             [
