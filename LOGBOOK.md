@@ -430,3 +430,25 @@ syntax, `uv lock --check`, and `git diff --check` pass.
 Inference: Run `qwen3-8b-confirmatory-20260828T153021Z-31b02693c37e` is
 terminally incomplete and becomes accounting-only. A fresh exact-SHA run is
 required; no failed preparation job is requeued.
+
+[2026-08-28 11:38 EDT] Active bounded-recovery run reached same-model smoke
+
+Observation: Release `c229e3c901dfa9f708f51f5fa882eee0a0f11710` is sealed
+and bound to run `qwen3-8b-confirmatory-20260828T153458Z-c229e3c901df`.
+Submission receipt jobs are bootstrap `5595031`, full/smoke preparation
+`5595032`/`5595033`, doctor `5595034`, smoke baseline/array/gate
+`5595035`/`5595036`/`5595037`, full baseline `5595038`, endpoint/remaining
+arrays `5595039`/`5595040`, endpoint report `5595041`, robustness `5595042`,
+analysis `5595043`, finalizer `5595044`, and status jobs `5595045` through
+`5595049`.
+
+Action: Full preparation encountered an explicit HTTP 429, performed its
+sealed 15-second first retry, then completed with exit zero and a preparation
+receipt. Serialized smoke preparation completed with exit zero under the
+success-only finalization boundary. GPU doctor completed with exit zero.
+
+Result: Allocation-only scheduler rows show smoke baseline `5595035` and all
+three tasks of smoke array `5595036` RUNNING concurrently on allocated H100s.
+This proves the preparation repairs operationally, but it is launch evidence
+only: the smoke gate, full grid, robustness, analysis, final manifest, and
+export remain pending terminal receipts.
