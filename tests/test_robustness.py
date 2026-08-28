@@ -11,6 +11,33 @@ from capability_mixture_experiment import result_fingerprints
 
 
 class RobustnessSandboxTests(unittest.TestCase):
+    def test_timestamped_lm_eval_result_is_normalized_and_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            emitted = output_dir / "results_2026-08-28T20-14-06.json"
+            emitted.write_text(
+                json.dumps({"results": {"routing_math500": {"exact_match": 0.5}}}),
+                encoding="utf-8",
+            )
+            canonical = output_dir / "results.json"
+
+            result = robustness.canonicalize_lm_eval_result(canonical)
+
+            self.assertEqual(result, canonical)
+            self.assertTrue(canonical.is_file())
+            self.assertFalse(emitted.exists())
+
+    def test_ambiguous_lm_eval_results_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            for suffix in ("one", "two"):
+                (output_dir / f"results_{suffix}.json").write_text(
+                    json.dumps({"results": {}}), encoding="utf-8"
+                )
+
+            with self.assertRaisesRegex(FileNotFoundError, "unambiguous"):
+                robustness.canonicalize_lm_eval_result(output_dir / "results.json")
+
     def test_robustness_cache_stages_only_the_two_pinned_datasets(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

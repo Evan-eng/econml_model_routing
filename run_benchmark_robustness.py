@@ -123,6 +123,22 @@ def lm_eval_entrypoint(release_file: Path) -> list[str]:
     return [sys.executable, str(release_file.with_name("lm_eval_transformers_compat.py"))]
 
 
+def canonicalize_lm_eval_result(output_path: Path) -> Path:
+    """Normalize lm-eval's version-specific result filename and validate it."""
+    if not output_path.is_file():
+        candidates = sorted(output_path.parent.glob("results_*.json"))
+        if len(candidates) != 1:
+            raise FileNotFoundError(
+                "lm-eval exited successfully without one unambiguous result artifact: "
+                f"expected={output_path}, candidates={candidates}"
+            )
+        candidates[0].replace(output_path)
+    payload = read_json(output_path)
+    if not isinstance(payload.get("results"), dict):
+        raise RuntimeError(f"lm-eval result has no task results: {output_path}")
+    return output_path
+
+
 def sandboxed_lm_eval_command(
     *,
     inner_command: Sequence[str],
@@ -568,10 +584,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if not args.keep_going:
                 break
         else:
-            if not output_path.is_file():
-                raise FileNotFoundError(
-                    f"lm-eval exited successfully without its result artifact: {output_path}"
-                )
+            canonicalize_lm_eval_result(output_path)
             write_json(
                 output_path.parent / "DONE.json",
                 {

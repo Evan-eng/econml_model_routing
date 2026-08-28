@@ -909,3 +909,33 @@ candidate execution, a scientific result, OOM, or node failure. The successful
 offline dataset and metric loads validate the preceding recovery changes; the
 next exact-SHA recovery can reuse the same accepted source adapters and shared
 pinned cache without retraining or downloading new inputs.
+
+[2026-08-28 16:15 EDT] Whole-process smoke completed both tasks but result filename differed
+
+Observation: Recovery
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-robustness-recovery-20260828T201011Z-f3190c6051a9`
+under exact release `f3190c6051a97dee7d5b00ebffd504ea868bca6c`
+passed pinned cache loading and explicit code-evaluation consent. Smoke
+`5595863` built both task contexts, generated both bounded responses, executed
+the HumanEval candidate inside bubblewrap, printed the two smoke metrics, and
+exited lm-eval successfully. lm-eval 0.4.10 wrote one timestamped
+`results_2026-08-28T20-14-06.859295.json` plus both per-task sample files. The
+wrapper then failed closed because it expected the requested canonical
+`results.json`; therefore no smoke DONE receipt was issued and the displayed
+limit-1 metrics are operational smoke output, not accepted scientific results.
+
+Action: Exact receipt-listed waiting and dependent recovery jobs `5595860`,
+`5595861`, `5595862`, and `5595864` through `5595867` were cancelled and
+retained for accounting. The runner now accepts only one unambiguous
+timestamped `results_*.json`, atomically renames it to the canonical
+`results.json`, parses it, and requires a task-results mapping before writing a
+DONE receipt. Zero or multiple candidates fail closed.
+
+Verification: Two new tests cover successful timestamp normalization and the
+ambiguous-artifact failure. The complete release gate passed Ruff, Pyright, all
+61 tests, lock verification, shell syntax, ShellCheck, and `git diff --check`.
+
+Inference: The generated-code containment and both benchmark executions now
+work end to end on an ICE H100. The remaining defect is artifact naming across
+the pinned lm-eval release, not a scientific, model, sandbox, OOM, or node
+failure. Accepted source adapters remain reusable without retraining.
