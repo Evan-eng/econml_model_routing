@@ -503,3 +503,35 @@ Result: At 12:39 EDT bootstrap and full preparation had completed with exit
 zero; smoke preparation and the GPU doctor were RUNNING. This is verified
 startup evidence, not a smoke or scientific result. The heartbeat now follows
 the c3cb replacement identity and lists the c229 run as accounting-only.
+
+[2026-08-28 12:54 EDT] Bounded CUDA recovery exhausted; bad nodes excluded
+
+Observation: Run `qwen3-8b-confirmatory-20260828T163748Z-c3cb569cf51c`
+completed bootstrap, both preparations, the GPU doctor, and smoke baseline.
+The smoke baseline emitted a valid DONE receipt with math `0.875` and code
+`0.000`. All three smoke arms failed the CUDA allocation probe on the exact
+busy-or-unavailable condition. Allocation-only `sacct` rows record
+`Restarts=2` for every task, proving that each task consumed all three sealed
+attempts before its final `FAILED 1:0` state; no blind fourth retry occurred.
+
+Observation: Across the c229 full grid and c3cb smoke attempts, unavailable
+allocations were observed on nodes `atl1-1-03-010-30-0`,
+`atl1-1-03-011-8-0`, `atl1-1-03-011-13-0`, and
+`atl1-1-03-011-18-0`. The c229 baseline has a valid DONE receipt, while its
+three endpoint arms remain RUNNING. Its four already-submitted MATH-500 and
+HumanEval robustness profiles remain dependency-bound only to the baseline and
+endpoint receipts, not to the other 42 grid cells.
+
+Action: Submitted replacement
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c` from the same sealed
+executor/coordinator release. Its submission receipt binds jobs `5595230`
+through `5595248`, with finalizer `5595243`. Before any GPU stage became
+eligible, applied the exact four-node exclusion to doctor, smoke baseline and
+array, full baseline and arrays, and robustness jobs listed in that receipt;
+`scontrol show job` verified the exclusion on scalar and array tasks. No job
+outside the active receipt was changed, and the 16:37 run is accounting-only.
+
+Inference: Robustness can overlap the rest of the grid as designed, but the
+three adapted profiles cannot start before their corresponding endpoint
+adapters have valid DONE receipts. The already-complete baseline receipt is
+not sufficient for those adapted profiles.
