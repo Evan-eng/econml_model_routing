@@ -450,6 +450,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     sandbox_environment.setdefault("HF_DATASETS_OFFLINE", "1")
     sandbox_environment.setdefault("HF_HUB_OFFLINE", "1")
     sandbox_environment.setdefault("TRANSFORMERS_OFFLINE", "1")
+    if args.allow_generated_code_execution:
+        sandbox_environment["HF_ALLOW_CODE_EVAL"] = "1"
     records: list[dict[str, object]] = []
     failures = 0
     for profile in profiles:

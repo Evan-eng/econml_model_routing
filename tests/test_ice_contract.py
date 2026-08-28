@@ -374,6 +374,7 @@ class CodeSandboxTests(unittest.TestCase):
             device_access=True,
             environment={
                 "CUDA_VISIBLE_DEVICES": "0",
+                "HF_ALLOW_CODE_EVAL": "1",
                 "HF_HOME": "/cache",
                 "HF_HUB_OFFLINE": "1",
             },
@@ -393,6 +394,7 @@ class CodeSandboxTests(unittest.TestCase):
         storage_index = command.index("/storage")
         self.assertEqual(command[storage_index - 1], "--dir")
         self.assertIn("CUDA_VISIBLE_DEVICES", command)
+        self.assertIn("HF_ALLOW_CODE_EVAL", command)
         self.assertIn("HF_HOME", command)
         self.assertIn("HF_HUB_OFFLINE", command)
 

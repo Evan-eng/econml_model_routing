@@ -876,3 +876,36 @@ passed), `uv lock --check`, `bash -n slurm/*.sbatch slurm/*.sh`, ShellCheck with
 only the expected dynamic-source `SC1091` exclusion, and `git diff --check` all
 exited zero. This verifies the source release locally; it does not yet prove an
 ICE compute-node smoke or a scientific result.
+
+[2026-08-28 16:08 EDT] Pinned metric loaded and explicit code-evaluation consent was missing
+
+Observation: Recovery
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-robustness-recovery-20260828T200236Z-bca43db9685b`
+was submitted under exact release
+`bca43db9685b53c64e14e9d2e6bd1a47b9b42b41`. Its frozen environment, pinned
+metric preparation, and CUDA sandbox doctor completed with receipts. Smoke
+`5595791` loaded Qwen3-8B and its adapter, loaded both datasets offline, and
+loaded the exact cached `code_eval` module from node-local scratch. It then
+failed before candidate execution because the whole-process sandbox removed
+the host's `HF_ALLOW_CODE_EVAL` variable and did not set it internally. No smoke
+DONE receipt or robustness result was created.
+
+Action: Exact receipt-listed waiting and dependent recovery jobs `5595788`,
+`5595789`, `5595790`, `5595792`, `5595793`, `5595794`, and `5595807` were
+cancelled. Completed preparation and doctor jobs plus failed smoke remain in the
+append-only accounting chain. The sandbox allowlist now admits
+`HF_ALLOW_CODE_EVAL`, and the runner sets it to `1` only after the existing
+explicit `--allow-generated-code-execution` and `--code-sandbox=bwrap` gates
+have passed. It is not inherited from the host and remains absent for any run
+without the explicit generated-code opt-in.
+
+Verification: The sandbox command regression test now proves the consent
+variable crosses only the filtered boundary. The complete release gate passed
+Ruff, Pyright, all 59 tests, lock verification, shell syntax, ShellCheck, and
+`git diff --check`.
+
+Inference: This was a fail-closed application-consent integration defect, not
+candidate execution, a scientific result, OOM, or node failure. The successful
+offline dataset and metric loads validate the preceding recovery changes; the
+next exact-SHA recovery can reuse the same accepted source adapters and shared
+pinned cache without retraining or downloading new inputs.

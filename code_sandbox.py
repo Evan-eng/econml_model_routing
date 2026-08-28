@@ -13,6 +13,7 @@ from typing import Mapping, Sequence
 
 ALLOWED_ENVIRONMENT = {
     "CUDA_VISIBLE_DEVICES",
+    "HF_ALLOW_CODE_EVAL",
     "HF_DATASETS_CACHE",
     "HF_DATASETS_OFFLINE",
     "HF_EVALUATE_CACHE",
