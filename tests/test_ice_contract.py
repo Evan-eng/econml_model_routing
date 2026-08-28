@@ -111,6 +111,67 @@ class RunContractTests(unittest.TestCase):
                 ["arm-release-1", "arm-release-2"],
             )
 
+
+class ModelLoadingTests(unittest.TestCase):
+    def test_quantized_single_gpu_load_uses_indexed_cuda_device_map(self) -> None:
+        torch = mock.Mock()
+        torch.cuda.is_available.return_value = True
+        torch.cuda.is_bf16_supported.return_value = True
+        torch.cuda.current_device.return_value = 0
+        torch.bfloat16 = "bfloat16"
+        torch.float16 = "float16"
+        torch.float32 = "float32"
+        tokenizer = mock.Mock(pad_token_id=1)
+        auto_tokenizer = mock.Mock()
+        auto_tokenizer.from_pretrained.return_value = tokenizer
+        model = mock.Mock()
+        auto_model = mock.Mock()
+        auto_model.from_pretrained.return_value = model
+        quantization = mock.Mock()
+        lora = mock.Mock()
+        prepare = mock.Mock(side_effect=lambda value, **_: value)
+        attach_lora = mock.Mock(side_effect=lambda value, _: value)
+        dependencies = (
+            torch,
+            mock.Mock(),
+            mock.Mock(),
+            lora,
+            attach_lora,
+            prepare,
+            auto_model,
+            auto_tokenizer,
+            quantization,
+            mock.Mock(),
+            mock.Mock(),
+            mock.Mock(),
+        )
+        design = {
+            "model": "Qwen/Qwen3-8B",
+            "training": {
+                "load_in_4bit": True,
+                "lora_rank": 8,
+                "lora_alpha": 16,
+                "lora_dropout": 0.05,
+            },
+        }
+
+        experiment.load_trainable_model(
+            design,
+            {"model": {"revision": "model-sha"}},
+            dependencies,
+        )
+
+        _, kwargs = auto_model.from_pretrained.call_args
+        self.assertEqual(kwargs["device_map"], {"": 0})
+        torch.cuda.current_device.assert_called_once_with()
+
+    def test_quantized_model_load_fails_closed_without_cuda(self) -> None:
+        torch = mock.Mock()
+        torch.cuda.is_available.return_value = False
+
+        with self.assertRaisesRegex(RuntimeError, "requires an allocated CUDA device"):
+            experiment.single_gpu_device_map(torch, load_in_4bit=True)
+
     def test_contract_rejects_unsealed_release_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             artifact_root = Path(temporary) / "artifact"

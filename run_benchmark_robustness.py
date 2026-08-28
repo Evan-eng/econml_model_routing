@@ -8,7 +8,6 @@ import importlib
 import json
 import os
 import shlex
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -29,11 +28,33 @@ from code_sandbox import build_bwrap_command, require_bwrap
 DEFAULT_TASKS = "hendrycks_math500,humaneval_instruct"
 
 
+def lm_eval_model_args(
+    *, model: str, dtype: str, revision: object, adapter: Path | None
+) -> list[str]:
+    """Build lm-eval HF arguments using Transformers-compatible names."""
+    args = [
+        f"pretrained={model}",
+        f"dtype={dtype}",
+        "enable_thinking=False",
+    ]
+    if revision:
+        args.append(f"revision={revision}")
+    if adapter is not None:
+        args.append(f"peft={adapter}")
+    return args
+
+
+def lm_eval_entrypoint(release_file: Path) -> list[str]:
+    """Use the sealed compatibility entrypoint from the executor release."""
+    return [sys.executable, str(release_file.with_name("lm_eval_transformers_compat.py"))]
+
+
 def sandboxed_lm_eval_command(
     *,
     inner_command: Sequence[str],
     experiment_dir: Path,
     output_dir: Path,
+    executor_release_root: Path,
     environment_root: Path,
     base_environment_root: Path | None = None,
     hf_home: Path,
@@ -47,6 +68,7 @@ def sandboxed_lm_eval_command(
         bwrap_path=bwrap_path,
         read_only_paths=[
             experiment_dir,
+            executor_release_root,
             environment_root,
             *([base_environment_root] if base_environment_root else []),
             hf_home,
@@ -247,16 +269,13 @@ def main() -> int:
         adapter = experiment_dir / Path(str(adapter_relative)) if adapter_relative else None
         if adapter is not None and not (adapter / "adapter_config.json").exists():
             raise FileNotFoundError(f"Adapter is missing or incomplete: {adapter}")
-        model_args = [
-            f"pretrained={design['model']}",
-            f"dtype={args.dtype}",
-            "enable_thinking=False",
-        ]
         revision = provenance.get("model", {}).get("revision")
-        if revision:
-            model_args.append(f"revision={revision}")
-        if adapter is not None:
-            model_args.append(f"peft={adapter}")
+        model_args = lm_eval_model_args(
+            model=str(design["model"]),
+            dtype=args.dtype,
+            revision=revision,
+            adapter=adapter,
+        )
         output_path = output_root / profile_name / "results.json"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         task_config_dir = output_path.parent / "task_configs"
@@ -265,11 +284,8 @@ def main() -> int:
             task_root=task_root,
             revisions=dataset_revisions,
         )
-        lm_eval = shutil.which("lm-eval")
-        if lm_eval is None and not args.dry_run:
-            raise FileNotFoundError("lm-eval is not installed in the frozen environment")
         inner_command = [
-            lm_eval or "lm-eval",
+            *lm_eval_entrypoint(Path(__file__).resolve()),
             "run",
             "--model",
             "hf",
@@ -294,6 +310,7 @@ def main() -> int:
             inner_command=inner_command,
             experiment_dir=experiment_dir,
             output_dir=output_path.parent,
+            executor_release_root=Path(__file__).resolve().parent,
             environment_root=Path(sys.prefix),
             base_environment_root=Path(sys.base_prefix),
             hf_home=hf_home,

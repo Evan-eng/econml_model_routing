@@ -240,3 +240,57 @@ Inference: The active run cannot satisfy its 45-arm receipt-completeness gate,
 so main analysis and finalization remain dependency-blocked. The existing 41
 arm receipts are valid partial artifacts but do not constitute accepted results.
 No retry, cancellation, design reduction, or downstream bypass was performed.
+
+[2026-08-28 11:06 EDT] AUTHORITY correction for corrected replacement run
+
+Context: The active sealed run exposed two deterministic executor defects and
+cannot progress beyond 41 of 45 arm receipts or produce robustness receipts.
+
+Action: The owner explicitly granted standing, persistent authorization for
+this experiment task to push the topic branch, including detailed run metadata
+and append-only ledgers, to
+`https://github.com/Evan-eng/econml_model_routing`; create and push corrected
+topic-branch releases; seal exact-SHA deployments and run contracts; and submit
+and operate the complete replacement 45-arm chain. This decision is consumed
+and must not be requested again after compaction or in later sessions.
+
+Result:
+
+- repo_publish: authorized for this task on topic branch
+  `glenn/ice-confirmatory-24h` to the named remote, including run metadata.
+- slurm_submit: authorized for complete corrected replacement chains within the
+  existing Qwen3-8B baseline, 45-arm, and four-profile robustness scope.
+- deploy: exact-SHA releases through `pace-code-release` only.
+- protected/default branches, force operations, merges, repository
+  administration, out-of-contract deletion, and credentials disclosure remain
+  prohibited.
+
+[2026-08-28 11:13 EDT] Corrected deterministic executor failures
+
+Observation: The failed arm traces showed Accelerate receiving an unindexed
+device map during 4-bit single-GPU Trainer setup. The failed robustness traces
+showed lm-eval 0.4.10 passing `dtype=` into Transformers 4.53.2, whose
+`PreTrainedModel.from_pretrained` consumes only `torch_dtype=` and forwarded the
+unknown key into the Qwen3 constructor.
+
+Action: Quantized model loads now fail closed without CUDA and otherwise bind
+the whole model to `torch.cuda.current_device()`. Robustness retains lm-eval's
+public `dtype` interface but executes through a sealed, exact-version
+compatibility entrypoint that translates the keyword only at the Transformers
+call boundary. The executor release is mounted read-only inside the networkless
+bubblewrap boundary so the entrypoint is available without expanding writable
+access.
+
+Verification: The changes were developed with failing regression tests. The
+final local checks passed: Ruff, Pyright, 24 Pytest tests, shell syntax for all
+Slurm scripts, `uv lock --check`, `git diff --check`, and a live import probe
+confirming that the compatibility method is inherited by Qwen3 under the
+frozen lm-eval 0.4.10 and Transformers 4.53.2 tuple. The requested clean
+reviewer worker was unavailable, so the primary agent completed the exact-diff
+standards/spec review and caught the missing read-only release mount before
+this checkpoint.
+
+Inference: These changes address both deterministic failure signatures without
+changing the frozen design, model or dataset revisions, attempt policy, or
+sandbox write boundary. A same-model compute-node smoke remains the required
+operational proof before the complete replacement fan-out.

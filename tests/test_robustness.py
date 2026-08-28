@@ -10,11 +10,20 @@ from capability_mixture_experiment import result_fingerprints
 
 
 class RobustnessSandboxTests(unittest.TestCase):
+    def test_robustness_uses_sealed_lm_eval_compatibility_entrypoint(self) -> None:
+        command = robustness.lm_eval_entrypoint(Path("/release/run_benchmark_robustness.py"))
+
+        self.assertEqual(
+            command,
+            [robustness.sys.executable, "/release/lm_eval_transformers_compat.py"],
+        )
+
     def test_lm_eval_command_runs_inside_gpu_enabled_bwrap(self) -> None:
         command = robustness.sandboxed_lm_eval_command(
             inner_command=["/env/bin/lm-eval", "run"],
             experiment_dir=Path("/storage/experiment"),
             output_dir=Path("/storage/experiment/robustness/baseline"),
+            executor_release_root=Path("/storage/releases/executor-sha"),
             environment_root=Path("/env"),
             hf_home=Path("/storage/cache"),
             bwrap_path=Path("/usr/bin/bwrap"),
@@ -29,6 +38,8 @@ class RobustnessSandboxTests(unittest.TestCase):
             [command[index : index + 3] for index in range(len(command) - 2)],
         )
         self.assertIn("/storage/experiment", command)
+        release_index = command.index("/storage/releases/executor-sha")
+        self.assertEqual(command[release_index - 1], "--ro-bind")
         self.assertEqual(command[-2:], ["/env/bin/lm-eval", "run"])
 
     def test_pinned_task_configs_override_both_dataset_revisions(self) -> None:

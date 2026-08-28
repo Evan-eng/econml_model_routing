@@ -1436,6 +1436,15 @@ def checkpoint_interval(optimizer_steps: int) -> int:
     return max(1, math.ceil(optimizer_steps / 10))
 
 
+def single_gpu_device_map(torch: Any, *, load_in_4bit: bool) -> str | dict[str, int]:
+    """Pin quantized models to the allocated CUDA device."""
+    if not load_in_4bit:
+        return "auto"
+    if not torch.cuda.is_available():
+        raise RuntimeError("4-bit model loading requires an allocated CUDA device")
+    return {"": int(torch.cuda.current_device())}
+
+
 def load_trainable_model(
     design: Mapping[str, Any], provenance: Mapping[str, Any], dependencies: tuple[Any, ...]
 ) -> tuple[Any, Any]:
@@ -1459,8 +1468,12 @@ def load_trainable_model(
         tokenizer.pad_token = tokenizer.eos_token
     use_bf16 = bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())
     compute_dtype = torch.bfloat16 if use_bf16 else torch.float16
-    model_kwargs: dict[str, Any] = {"revision": revision, "device_map": "auto"}
-    if bool(design["training"]["load_in_4bit"]):
+    load_in_4bit = bool(design["training"]["load_in_4bit"])
+    model_kwargs: dict[str, Any] = {
+        "revision": revision,
+        "device_map": single_gpu_device_map(torch, load_in_4bit=load_in_4bit),
+    }
+    if load_in_4bit:
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -1475,7 +1488,7 @@ def load_trainable_model(
         if "dtype" in model_kwargs:
             model_kwargs["torch_dtype"] = model_kwargs.pop("dtype")
         model = AutoModelForCausalLM.from_pretrained(design["model"], **model_kwargs)
-    if bool(design["training"]["load_in_4bit"]):
+    if load_in_4bit:
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
     lora = LoraConfig(
         r=int(design["training"]["lora_rank"]),
@@ -1514,8 +1527,12 @@ def load_baseline_model(
         tokenizer.pad_token = tokenizer.eos_token
     use_bf16 = bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())
     compute_dtype = torch.bfloat16 if use_bf16 else torch.float16
-    model_kwargs: dict[str, Any] = {"revision": revision, "device_map": "auto"}
-    if bool(design["training"]["load_in_4bit"]):
+    load_in_4bit = bool(design["training"]["load_in_4bit"])
+    model_kwargs: dict[str, Any] = {
+        "revision": revision,
+        "device_map": single_gpu_device_map(torch, load_in_4bit=load_in_4bit),
+    }
+    if load_in_4bit:
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
