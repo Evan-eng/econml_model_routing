@@ -1030,3 +1030,24 @@ row and no production DONE receipt at this snapshot.
 Inference: The last source arm is slow but not stalled according to current
 telemetry. The correct action remains to let it finish and allow the sealed
 dependency chain to release source analysis and production profile 46.
+
+[2026-08-28 16:53 EDT] Final source arm entered code evaluation; robustness passed 60 percent
+
+Observation: The final source arm `z_0p3750/seed_0011` wrote its complete
+755,419-byte `predictions_math.jsonl` at 16:52:34 EDT and remained RUNNING in
+its final code-evaluation phase. A completed neighboring arm took about 22
+minutes between its math prediction artifact and its code predictions,
+metrics, and DONE receipt. The source remains at 44 of 45 arm DONE receipts
+until the final receipt reconciles.
+
+Observation: Representative production baseline allocation `5595933` reached
+420 of 664 generation requests (63 percent) after 32:56, at about 6.03 seconds
+per request. Its progress meter estimated about 24:30 remaining in generation.
+All 45 released production robustness allocations remained RUNNING, no
+production DONE receipt existed, and allocation-only accounting contained no
+terminal production row at this snapshot.
+
+Inference: The source critical path is expected near 17:15 EDT based on the
+neighboring code-evaluation duration. The first robustness wave is expected to
+reach generation completion near 17:18 EDT before final scoring and receipt
+writing. Both estimates are operational projections, not completion evidence.
