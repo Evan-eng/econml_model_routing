@@ -557,3 +557,16 @@ Inference: Excluding the four empirically bad nodes removed the immediate CUDA
 allocation failure mode through smoke and initial full-grid launch. Continued
 RUNNING state is not a scientific result; acceptance still requires all
 terminal receipts and the final manifest/export.
+
+[2026-08-28 13:56 EDT] Full grid completed training checkpoints
+
+Observation: Full baseline and all 45 arms remained RUNNING after 58 minutes,
+with zero allocation restarts or failed rows. Every arm now contains both
+retained training checkpoints, `checkpoint-117` and `checkpoint-128`, so all
+45 arms have crossed the sealed final optimizer checkpoint and are in
+post-training evaluation or artifact finalization. No baseline or arm DONE
+receipt existed yet.
+
+Inference: Checkpoint completeness is strong progress evidence but not terminal
+acceptance. Endpoint report and robustness remain correctly blocked until the
+baseline and three endpoint evaluations emit reconciled DONE receipts.
