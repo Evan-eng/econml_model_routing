@@ -242,10 +242,15 @@ class CodeSandboxTests(unittest.TestCase):
             work_dir=work_dir,
             argv=["/usr/bin/python3", "-I", "-S", str(work_dir / "candidate.py")],
             bwrap_path=Path("/usr/bin/bwrap"),
+            inherited_environment={"SECRET_TOKEN": "must-not-cross-boundary"},
         )
 
         self.assertIn("--unshare-all", command)
         self.assertIn("--die-with-parent", command)
+        self.assertNotIn("--clearenv", command)
+        secret_index = command.index("SECRET_TOKEN")
+        self.assertEqual(command[secret_index - 1], "--unsetenv")
+        self.assertNotIn("must-not-cross-boundary", command)
         self.assertEqual(command.count("--bind"), 1)
         bind_index = command.index("--bind")
         resolved = str(work_dir.resolve())

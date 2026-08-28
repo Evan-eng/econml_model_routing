@@ -38,6 +38,7 @@ def build_bwrap_command(
     read_only_paths: Sequence[Path] = (),
     device_access: bool = False,
     environment: Mapping[str, str] | None = None,
+    inherited_environment: Mapping[str, str] | None = None,
 ) -> list[str]:
     """Build a minimal, networkless bubblewrap command."""
     work_dir = work_dir.resolve()
@@ -46,7 +47,6 @@ def build_bwrap_command(
         "--die-with-parent",
         "--new-session",
         "--unshare-all",
-        "--clearenv",
         "--proc",
         "/proc",
         "--dev",
@@ -54,6 +54,11 @@ def build_bwrap_command(
         "--tmpfs",
         "/tmp",
     ]
+    inherited = os.environ if inherited_environment is None else inherited_environment
+    for key in sorted(inherited):
+        if not key or "=" in key or "\0" in key:
+            raise SandboxError(f"Invalid inherited environment variable name: {key!r}")
+        command.extend(["--unsetenv", key])
     if device_access:
         for device in sorted(Path("/dev").glob("nvidia*")):
             if device.is_dir():

@@ -86,3 +86,24 @@ Git changes. Updated all remote cleanliness gates to use
 `core.fileMode=false` while retaining exact SHA, byte, untracked-file, contract,
 and v3 receipt validation. Nineteen tests, Ruff, Pyright, shell syntax, and diff
 checks pass. No experiment jobs have been submitted yet.
+
+[2026-08-27 22:28 EDT] First live chain and ICE bubblewrap compatibility failure
+
+Context: Release `b2db6c24f8e4a375c95389d1188f9216c62f8132` was sealed with a
+v3 receipt and submitted as run
+`qwen3-8b-confirmatory-20260828T022045Z-b2db6c24f8e4`. The submission receipt
+binds jobs `5594275` through `5594293` to that release.
+
+Action: Bootstrap and both preparation jobs completed, warming the shared model
+and dataset cache. The allocated-node GPU doctor ran on one H100 as job
+`5594278` and failed before containment with exit `1:0` because ICE provides
+bubblewrap 0.4.1, which supports `--unsetenv` but not `--clearenv`.
+
+Result: No smoke baseline, smoke arm, confirmatory baseline, confirmatory arm,
+robustness, or analysis workload started. The failed allocation row is retained.
+Replaced the unsupported flag with an explicit unset of every inherited
+environment key before restoring only the fixed HOME/PATH and allowlisted GPU
+and offline-cache variables. A regression test proves inherited values do not
+cross the command boundary. Nineteen tests, Ruff, Pyright, and Slurm syntax
+checks pass. A new executor release and a new run contract are required; the old
+chain will not be reused.
