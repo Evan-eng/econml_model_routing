@@ -1167,3 +1167,32 @@ Inference: The implementation is ready for the final containment rereview,
 then exact-SHA publication and ICE submission. Completion remains unproven
 until all 46 corrected profile receipts, corrected analysis, allocation-only
 accounting, final manifest, and read-only export reconcile.
+
+[2026-08-28 19:15 EDT] First MBPP submission failed closed on stale scheduler dependency
+
+Observation: Exact-SHA release
+`1cfb81d7a329eb51752e1cb04b0e5fca9fa9a603` was pushed and sealed under the
+v3 ICE release root. Its first launcher invocation created accounting-only run
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-mbpp-rescore-20260828T231414Z-1cfb81d7a329`
+but Slurm rejected the finalizer's dependency on the already-completed MATH
+finalizer because that terminal allocation had aged out of the scheduler's
+dependency window. No submission receipt or experiment output was published.
+
+Observation: The launcher's error trap cancelled all four newly submitted
+partial job IDs, `5596331` through `5596334`. Allocation-only `sacct -X`
+reported all four as CANCELLED with zero elapsed time; the run retains its
+source receipt and partial-job roster for append-only failed/debug accounting.
+No unrelated allocation was altered.
+
+Observation: The corrected launcher removes the unnecessary scheduler edge to
+the historical MATH finalizer and instead requires its FINALIZED receipt and
+manifest before submission. The MBPP finalizer still independently validates
+the exact parent run, release tuple, all 46 profile receipts, read-only tree,
+nested manifest, and parent output release before producing any final output.
+The job-submission helper now propagates any `sbatch` failure immediately so a
+partial chain cannot continue with an empty job ID. Ruff, Pyright, 105 tests,
+Bash syntax, and diff checks pass after the correction.
+
+Inference: This was a coordinator submission defect, not an evaluation or
+sandbox failure. It requires a new exact-SHA release; the accounting-only run
+must not be resumed.

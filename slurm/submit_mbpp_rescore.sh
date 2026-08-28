@@ -27,6 +27,8 @@ UV_BIN="${UV_BIN:-${HOME}/.local/bin/uv}"
 [[ -f "${RELEASE_RECEIPT}" ]]
 [[ -f "${SOURCE_EXPERIMENT_DIR}/stage_receipts/submission.json" ]]
 [[ -f "${PARENT_EXPERIMENT_DIR}/stage_receipts/submission.json" ]]
+[[ -f "${PARENT_EXPERIMENT_DIR}/stage_receipts/FINALIZED.json" ]]
+[[ -f "${PARENT_EXPORT_DIR}/MANIFEST.json" ]]
 python3 -c 'import json,sys; p,sha,deploy,origin=sys.argv[1:]; r=json.load(open(p)); assert r.get("contract")=="pace-code-release-v3"; assert r.get("revision")==sha; assert r.get("deployment_path")==deploy; assert r.get("origin")==origin' \
   "${RELEASE_RECEIPT}" "${RELEASE_SHA}" "${RELEASE_DIR}" "${REPO_URL}"
 [[ "$(git -c core.fileMode=false -C "${RELEASE_DIR}" rev-parse HEAD)" == "${RELEASE_SHA}" ]]
@@ -36,9 +38,6 @@ LOCK_SHA="$(sha256sum "${RELEASE_DIR}/uv.lock" | cut -d' ' -f1)"
 VENV_DIR="${ARTIFACT_ROOT}/envs/${LOCK_SHA}"
 VENV_PYTHON="${VENV_DIR}/bin/python"
 [[ -x "${VENV_PYTHON}" ]]
-PARENT_FINALIZE_JOB="$(${VENV_PYTHON} -c 'import json,sys; r=json.load(open(sys.argv[1])); print(r["jobs"]["finalize"])' "${PARENT_EXPERIMENT_DIR}/stage_receipts/submission.json")"
-[[ "${PARENT_FINALIZE_JOB}" =~ ^[0-9]+$ ]]
-
 umask 077
 mkdir -p "${ARTIFACT_ROOT}/runs" "${ARTIFACT_ROOT}/exports" "${LOG_DIR}"
 "${VENV_PYTHON}" "${RELEASE_DIR}/mbpp_rescore.py" init \
@@ -69,9 +68,13 @@ cancel_partial_chain() {
 trap cancel_partial_chain ERR
 submit_job() {
   local result
-  result="$(sbatch --parsable "$@")"
+  if ! result="$(sbatch --parsable "$@")"; then
+    return 1
+  fi
   result="${result%%;*}"
-  [[ "${result}" =~ ^[0-9]+$ ]]
+  if [[ ! "${result}" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
   printf '%s\n' "${result}" >> "${SUBMITTED_IDS_PATH}"
   printf '%s' "${result}"
 }
@@ -94,7 +97,7 @@ RESCORE_JOB="$(submit_job --dependency="aftercorr:${SOURCE_GATE_JOB}" \
   "${RELEASE_DIR}/slurm/mbpp_rescore.sbatch")"
 ACCOUNT_JOB_IDS="${BOOTSTRAP_JOB},${DOCTOR_JOB},${SOURCE_GATE_JOB},${RESCORE_JOB}"
 FINALIZE_JOB="$(submit_job \
-  --dependency="afterok:${RESCORE_JOB},afterok:${PARENT_FINALIZE_JOB}" \
+  --dependency="afterok:${RESCORE_JOB}" \
   --export="${common_exports},ACCOUNT_JOB_IDS=${ACCOUNT_JOB_IDS}" \
   --output="${LOG_DIR}/finalize_%j.out" --error="${LOG_DIR}/finalize_%j.err" \
   "${RELEASE_DIR}/slurm/mbpp_rescore_finalize.sbatch")"
