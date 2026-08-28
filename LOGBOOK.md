@@ -1011,3 +1011,22 @@ failure row and no production DONE receipt yet.
 Inference: The per-profile source-gate dependency behaves as designed. The
 remaining two robustness profiles should release independently when their two
 source DONE receipts appear; no scheduler intervention is currently warranted.
+
+[2026-08-28 16:45 EDT] Forty-fourth source arm released profile 45
+
+Observation: Source allocation `5595282` completed with exit code 0 after
+3:45:18 and emitted `arms/z_0p6250/seed_0047/DONE.json`. The source run now has
+44 of 45 unique arm DONE receipts plus its baseline receipt. Its corresponding
+production robustness allocation `5596009` started automatically at 16:43:07
+EDT, raising the production fan-out to 45 of 46 profiles.
+
+Observation: The final source allocation `5595271`, corresponding to the only
+missing `z_0p3750/seed_0011` receipt, remained RUNNING after 3:48. Its stderr
+file received a fresh write at 16:45:13 EDT. Source analysis and the last
+profile-specific robustness gate remained dependency-pending. All 45 released
+production robustness allocations remained RUNNING with no terminal failure
+row and no production DONE receipt at this snapshot.
+
+Inference: The last source arm is slow but not stalled according to current
+telemetry. The correct action remains to let it finish and allow the sealed
+dependency chain to release source analysis and production profile 46.
