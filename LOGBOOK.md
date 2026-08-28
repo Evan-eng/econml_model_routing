@@ -722,3 +722,36 @@ Inference: The recovery smoke can start as soon as its already-completed source
 endpoint adapter and the new GPU doctor validate. Most profile evaluations can
 then run immediately while the last four source arms remain the only per-profile
 dependencies and source analysis remains the combined-export dependency.
+
+[2026-08-28 15:32 EDT] First recovery submission failed closed on historical dependencies
+
+Observation: Exact release `b10f1b6c716702ebacbb4cebd4f4e6463127f44c`
+was pushed, remotely verified, and sealed. Recovery initialization created run
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-robustness-recovery-20260828T192701Z-b10f1b6c7167`,
+but ICE rejected new `afterok` and `aftercorr` dependencies on historical
+source array jobs with `Batch job submission failed: Job dependency problem`.
+No submission receipt or robustness result was created. Partial setup jobs
+`5595518` (bootstrap) and `5595519` (GPU doctor) completed successfully; their
+allocation rows and the incomplete run remain accounting-only.
+
+Observation: The partial-chain trap did not stop at the first failed `sbatch`
+because command-substitution errexit semantics allowed `submit_job` to return
+the status of its final `printf`. Blank partial-ID lines also made its cleanup
+call unreliable. No recovery training or evaluation GPU job was submitted.
+
+Action: The launcher now returns immediately when `sbatch` fails and filters
+blank IDs before exact partial-chain cancellation. Dependencies on historical
+source baseline, arrays, and analysis were removed. New receipt-producing CPU
+gates wait for and validate each exact baseline/arm DONE receipt and the source
+analysis DONE receipt. New recovery arrays use `aftercorr` only against their
+new source-gate arrays, so 41 ready adapters can release immediately while the
+four unfinished adapters wait independently without occupying GPUs.
+
+Verification: The corrected gate implementation and per-profile provenance
+lineage passed `uv run ruff check .`, `uv run pyright`, `uv run pytest -q`
+(54 passed), `uv lock --check`, shell syntax, ShellCheck, and `git diff --check`.
+
+Inference: The dependency rejection was a launcher/scheduler integration
+failure, not an experiment or model result. The accepted source artifacts and
+the failed extension accounting remain valid inputs to a new exact-SHA
+replacement recovery run.

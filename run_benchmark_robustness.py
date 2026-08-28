@@ -322,6 +322,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             experiment_dir,
             source_experiment_dir,
             recovery_smoke=args.recovery_smoke,
+            recovery_profile=str(args.recovery_profile),
         )
     elif args.profile_index is not None:
         raise ValueError("--profile-index is reserved for a separate exploratory extension")

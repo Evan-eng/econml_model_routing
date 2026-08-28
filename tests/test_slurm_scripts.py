@@ -25,18 +25,29 @@ class IceSlurmScriptTests(unittest.TestCase):
 
         self.assertIn('ENDPOINT_INDICES="0,20,40"', submitter)
         self.assertIn('REMAINING_INDICES="1-19,21-39,41-44"', submitter)
-        self.assertIn("aftercorr:${SOURCE_ENDPOINT_JOB}", submitter)
-        self.assertIn("aftercorr:${SOURCE_REMAINING_JOB}", submitter)
+        self.assertIn("aftercorr:${ENDPOINT_GATE_JOB}", submitter)
+        self.assertIn("aftercorr:${REMAINING_GATE_JOB}", submitter)
         self.assertIn("afterok:${SMOKE_JOB}", submitter)
+        self.assertNotIn("aftercorr:${SOURCE_ENDPOINT_JOB}", submitter)
+        self.assertNotIn("aftercorr:${SOURCE_REMAINING_JOB}", submitter)
+        self.assertNotIn(":${SOURCE_ANALYSIS_JOB}\"", submitter)
         self.assertIn("%42", submitter)
         self.assertIn("SOURCE_ACCOUNT_JOB_IDS", submitter)
         self.assertIn("SUPERSEDED_ACCOUNT_JOB_IDS", submitter)
+        source_gate = (
+            ROOT / "slurm" / "robustness_recovery_source_gate.sbatch"
+        ).read_text(encoding="utf-8")
+        analysis_gate = (
+            ROOT / "slurm" / "robustness_recovery_analysis_gate.sbatch"
+        ).read_text(encoding="utf-8")
+        self.assertIn("wait-source", source_gate)
+        self.assertIn("wait-analysis", analysis_gate)
         self.assertIn("--recovery-profile", worker)
         self.assertIn("--recovery-profile 40", smoke)
         self.assertIn("--recovery-smoke", smoke)
         self.assertIn("--limit 1", smoke)
         self.assertIn("sacct -X", finalizer)
-        for text in (worker, smoke, finalizer):
+        for text in (worker, smoke, finalizer, source_gate, analysis_gate):
             self.assertNotIn("#SBATCH --account", text)
             self.assertNotIn("#SBATCH --partition", text)
     def test_exploratory_launcher_uses_sparse_aftercorr_array(self) -> None:

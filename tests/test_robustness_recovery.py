@@ -32,6 +32,24 @@ class RobustnessRecoveryTests(unittest.TestCase):
         self.assertEqual(
             parser.parse_args(
                 [
+                    "wait-source",
+                    "--experiment-dir",
+                    "/recovered",
+                    "--recovery-profile",
+                    "40",
+                ]
+            ).command,
+            "wait-source",
+        )
+        self.assertEqual(
+            parser.parse_args(
+                ["wait-analysis", "--experiment-dir", "/recovered"]
+            ).command,
+            "wait-analysis",
+        )
+        self.assertEqual(
+            parser.parse_args(
+                [
                     "finalize",
                     "--experiment-dir",
                     "/recovered",

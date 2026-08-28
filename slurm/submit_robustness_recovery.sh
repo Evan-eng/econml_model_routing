@@ -90,14 +90,18 @@ SUBMITTED_IDS_PATH="${EXPERIMENT_DIR}/stage_receipts/submitted_job_ids.partial"
 : > "${SUBMITTED_IDS_PATH}"
 cancel_partial_chain() {
   if [[ -s "${SUBMITTED_IDS_PATH}" ]]; then
-    mapfile -t submitted_ids < "${SUBMITTED_IDS_PATH}"
-    scancel "${submitted_ids[@]}" 2>/dev/null || true
+    mapfile -t submitted_ids < <(sed '/^$/d' "${SUBMITTED_IDS_PATH}")
+    if (( ${#submitted_ids[@]} > 0 )); then
+      scancel "${submitted_ids[@]}" 2>/dev/null || true
+    fi
   fi
 }
 trap cancel_partial_chain ERR
 submit_job() {
   local result
-  result="$(sbatch --parsable "$@")"
+  if ! result="$(sbatch --parsable "$@")"; then
+    return 1
+  fi
   result="${result%%;*}"
   [[ "${result}" =~ ^[0-9]+$ ]]
   printf '%s\n' "${result}" >> "${SUBMITTED_IDS_PATH}"
@@ -115,30 +119,49 @@ DOCTOR_JOB="$(submit_job --dependency="afterok:${BOOTSTRAP_JOB}" \
   "${gpu_options[@]}" --export="${common_exports}" \
   --output="${LOG_DIR}/gpu_doctor_%j.out" --error="${LOG_DIR}/gpu_doctor_%j.err" \
   "${RELEASE_DIR}/slurm/exploratory_gpu_doctor.sbatch")"
+baseline_gate_exports="${common_exports},RECOVERY_PROFILE=baseline"
+BASELINE_GATE_JOB="$(submit_job --dependency="afterok:${BOOTSTRAP_JOB}" \
+  --export="${baseline_gate_exports}" --output="${LOG_DIR}/source_baseline_gate_%j.out" \
+  --error="${LOG_DIR}/source_baseline_gate_%j.err" \
+  "${RELEASE_DIR}/slurm/robustness_recovery_source_gate.sbatch")"
+ENDPOINT_GATE_JOB="$(submit_job --dependency="afterok:${BOOTSTRAP_JOB}" \
+  --array="${ENDPOINT_INDICES}%3" --export="${common_exports}" \
+  --output="${LOG_DIR}/source_endpoint_gate_%A_%a.out" \
+  --error="${LOG_DIR}/source_endpoint_gate_%A_%a.err" \
+  "${RELEASE_DIR}/slurm/robustness_recovery_source_gate.sbatch")"
+REMAINING_GATE_JOB="$(submit_job --dependency="afterok:${BOOTSTRAP_JOB}" \
+  --array="${REMAINING_INDICES}%42" --export="${common_exports}" \
+  --output="${LOG_DIR}/source_remaining_gate_%A_%a.out" \
+  --error="${LOG_DIR}/source_remaining_gate_%A_%a.err" \
+  "${RELEASE_DIR}/slurm/robustness_recovery_source_gate.sbatch")"
+ANALYSIS_GATE_JOB="$(submit_job --dependency="afterok:${BOOTSTRAP_JOB}" \
+  --export="${common_exports}" --output="${LOG_DIR}/source_analysis_gate_%j.out" \
+  --error="${LOG_DIR}/source_analysis_gate_%j.err" \
+  "${RELEASE_DIR}/slurm/robustness_recovery_analysis_gate.sbatch")"
 SMOKE_JOB="$(submit_job \
-  --dependency="afterok:${DOCTOR_JOB}:${SOURCE_ENDPOINT_JOB}_40" \
+  --dependency="afterok:${DOCTOR_JOB}:${ENDPOINT_GATE_JOB}" \
   "${gpu_options[@]}" --export="${common_exports}" \
   --output="${LOG_DIR}/smoke_%j.out" --error="${LOG_DIR}/smoke_%j.err" \
   "${RELEASE_DIR}/slurm/robustness_recovery_smoke.sbatch")"
 baseline_exports="${common_exports},RECOVERY_PROFILE=baseline"
-BASELINE_JOB="$(submit_job --dependency="afterok:${SMOKE_JOB}:${SOURCE_BASELINE_JOB}" \
+BASELINE_JOB="$(submit_job --dependency="afterok:${SMOKE_JOB}:${BASELINE_GATE_JOB}" \
   "${gpu_options[@]}" --export="${baseline_exports}" \
   --output="${LOG_DIR}/baseline_%j.out" --error="${LOG_DIR}/baseline_%j.err" \
   "${RELEASE_DIR}/slurm/robustness_recovery.sbatch")"
 ENDPOINT_JOB="$(submit_job \
-  --dependency="aftercorr:${SOURCE_ENDPOINT_JOB},afterok:${SMOKE_JOB}" \
+  --dependency="aftercorr:${ENDPOINT_GATE_JOB},afterok:${SMOKE_JOB}" \
   --array="${ENDPOINT_INDICES}%3" "${gpu_options[@]}" --export="${common_exports}" \
   --output="${LOG_DIR}/endpoint_%A_%a.out" --error="${LOG_DIR}/endpoint_%A_%a.err" \
   "${RELEASE_DIR}/slurm/robustness_recovery.sbatch")"
 REMAINING_JOB="$(submit_job \
-  --dependency="aftercorr:${SOURCE_REMAINING_JOB},afterok:${SMOKE_JOB}" \
+  --dependency="aftercorr:${REMAINING_GATE_JOB},afterok:${SMOKE_JOB}" \
   --array="${REMAINING_INDICES}%42" "${gpu_options[@]}" --export="${common_exports}" \
   --output="${LOG_DIR}/remaining_%A_%a.out" --error="${LOG_DIR}/remaining_%A_%a.err" \
   "${RELEASE_DIR}/slurm/robustness_recovery.sbatch")"
-ACCOUNT_JOB_IDS="${SOURCE_ACCOUNT_JOB_IDS},${SUPERSEDED_ACCOUNT_JOB_IDS},${BOOTSTRAP_JOB},${DOCTOR_JOB},${SMOKE_JOB},${BASELINE_JOB},${ENDPOINT_JOB},${REMAINING_JOB}"
+ACCOUNT_JOB_IDS="${SOURCE_ACCOUNT_JOB_IDS},${SUPERSEDED_ACCOUNT_JOB_IDS},${BOOTSTRAP_JOB},${DOCTOR_JOB},${BASELINE_GATE_JOB},${ENDPOINT_GATE_JOB},${REMAINING_GATE_JOB},${ANALYSIS_GATE_JOB},${SMOKE_JOB},${BASELINE_JOB},${ENDPOINT_JOB},${REMAINING_JOB}"
 final_exports="${common_exports},ACCOUNT_JOB_IDS=${ACCOUNT_JOB_IDS}"
 FINALIZE_JOB="$(submit_job \
-  --dependency="afterok:${BASELINE_JOB}:${ENDPOINT_JOB}:${REMAINING_JOB}:${SOURCE_ANALYSIS_JOB}" \
+  --dependency="afterok:${BASELINE_JOB}:${ENDPOINT_JOB}:${REMAINING_JOB}:${ANALYSIS_GATE_JOB}" \
   --export="${final_exports}" --output="${LOG_DIR}/finalize_%j.out" \
   --error="${LOG_DIR}/finalize_%j.err" \
   "${RELEASE_DIR}/slurm/robustness_recovery_finalize.sbatch")"
@@ -152,6 +175,10 @@ python3 "${RELEASE_DIR}/ice_pipeline.py" submission-receipt \
   --input-producer-release "${SUPERSEDED_SUBMISSION_RELEASE}" \
   --pre-side-effect-release-gate submit_robustness_recovery.sh \
   --job "bootstrap=${BOOTSTRAP_JOB}" --job "gpu_doctor=${DOCTOR_JOB}" \
+  --job "baseline_source_gate=${BASELINE_GATE_JOB}" \
+  --job "endpoint_source_gate=${ENDPOINT_GATE_JOB}" \
+  --job "remaining_source_gate=${REMAINING_GATE_JOB}" \
+  --job "analysis_source_gate=${ANALYSIS_GATE_JOB}" \
   --job "smoke=${SMOKE_JOB}" --job "baseline=${BASELINE_JOB}" \
   --job "endpoint_profiles=${ENDPOINT_JOB}" \
   --job "remaining_profiles=${REMAINING_JOB}" --job "finalize=${FINALIZE_JOB}"

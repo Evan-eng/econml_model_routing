@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import stat
+import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -86,6 +87,189 @@ def recovery_profile_selector(design: Mapping[str, Any], raw: str) -> str:
         raise IndexError(f"Profile index {index} is outside the {len(arms)}-arm grid")
     mixture, seed = arms[index]
     return f"{mixture}:{seed}"
+
+
+def _source_profile_identity(
+    source_experiment_dir: Path, raw: str
+) -> tuple[str, Path]:
+    design = read_json(source_experiment_dir / "design.json")
+    selector = recovery_profile_selector(design, raw)
+    if selector == "baseline":
+        return "baseline", source_experiment_dir / "baseline" / "DONE.json"
+    mixture_text, seed_text = selector.split(":", 1)
+    mixture = float(mixture_text)
+    seed = int(seed_text)
+    profile = profile_output_name(mixture, seed)
+    return (
+        profile,
+        source_experiment_dir
+        / "arms"
+        / f"z_{mixture:.4f}".replace(".", "p")
+        / f"seed_{seed:04d}"
+        / "DONE.json",
+    )
+
+
+def wait_for_source_profile(
+    experiment_dir: Path,
+    raw: str,
+    *,
+    timeout_seconds: float,
+    poll_seconds: float,
+) -> None:
+    """Wait for and receipt one exact source baseline or adapter release."""
+    experiment_dir = experiment_dir.resolve()
+    contract = active_run_contract(experiment_dir)
+    if contract is None:
+        raise RuntimeError("Source readiness gate requires a sealed contract")
+    plan = read_json(experiment_dir / "recovery_plan.json")
+    source_experiment_dir = Path(str(plan["source_experiment_dir"])).resolve()
+    source_receipt = validate_recovery_source_receipt(
+        experiment_dir, source_experiment_dir
+    )
+    profile, done_path = _source_profile_identity(source_experiment_dir, raw)
+    deadline = time.monotonic() + timeout_seconds
+    while not done_path.is_file():
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"Timed out waiting for source profile receipt: {done_path}")
+        time.sleep(poll_seconds)
+    source_release = validated_terminal_release(
+        done_path, result_fingerprints(source_experiment_dir)
+    )
+    output = experiment_dir / "stage_receipts" / "source_ready" / f"{profile}.json"
+    if output.exists():
+        raise FileExistsError(f"Refusing to replace source readiness receipt: {output}")
+    write_json(
+        output,
+        {
+            "completed_at_utc": utc_now(),
+            "profile": profile,
+            "source_release": source_release,
+            **contract_release_fields(
+                experiment_dir,
+                stage="robustness-recovery-source-ready",
+                output_identity=profile,
+                input_producer_releases=[
+                    str(source_receipt["output_release"]),
+                    source_release,
+                ],
+            ),
+            **result_fingerprints(experiment_dir),
+        },
+    )
+
+
+def validate_source_profile_ready(
+    experiment_dir: Path, source_experiment_dir: Path, raw: str
+) -> str:
+    """Validate the receipt-producing source readiness gate for one profile."""
+    contract = active_run_contract(experiment_dir)
+    if contract is None:
+        raise RuntimeError("Source readiness validation requires a sealed contract")
+    source_receipt = validate_recovery_source_receipt(
+        experiment_dir, source_experiment_dir
+    )
+    profile, done_path = _source_profile_identity(source_experiment_dir, raw)
+    source_release = validated_terminal_release(
+        done_path, result_fingerprints(source_experiment_dir)
+    )
+    receipt = read_json(
+        experiment_dir / "stage_receipts" / "source_ready" / f"{profile}.json"
+    )
+    expected = {
+        "profile": profile,
+        "source_release": source_release,
+        "stage": "robustness-recovery-source-ready",
+        "executor_release": contract["executor_release"],
+        "coordinator_release": contract["coordinator_release"],
+        "input_producer_releases": [
+            source_receipt["output_release"],
+            source_release,
+        ],
+        "output_release": (
+            f"{contract['executor_release']}:{contract['run_id']}:"
+            f"robustness-recovery-source-ready:{profile}"
+        ),
+        **result_fingerprints(experiment_dir),
+    }
+    if any(receipt.get(key) != value for key, value in expected.items()):
+        raise RuntimeError(f"Source readiness receipt mismatch for {profile}")
+    return str(expected["output_release"])
+
+
+def wait_for_source_analysis(
+    experiment_dir: Path, *, timeout_seconds: float, poll_seconds: float
+) -> None:
+    """Wait for and receipt the accepted source analysis release."""
+    experiment_dir = experiment_dir.resolve()
+    contract = active_run_contract(experiment_dir)
+    if contract is None:
+        raise RuntimeError("Source analysis gate requires a sealed contract")
+    plan = read_json(experiment_dir / "recovery_plan.json")
+    source_experiment_dir = Path(str(plan["source_experiment_dir"])).resolve()
+    source_receipt = validate_recovery_source_receipt(
+        experiment_dir, source_experiment_dir
+    )
+    done_path = source_experiment_dir / "analysis" / "DONE.json"
+    deadline = time.monotonic() + timeout_seconds
+    while not done_path.is_file():
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"Timed out waiting for source analysis receipt: {done_path}")
+        time.sleep(poll_seconds)
+    analysis_release = validated_terminal_release(
+        done_path, result_fingerprints(source_experiment_dir)
+    )
+    output = experiment_dir / "stage_receipts" / "source_analysis_ready.json"
+    if output.exists():
+        raise FileExistsError(f"Refusing to replace source analysis receipt: {output}")
+    write_json(
+        output,
+        {
+            "completed_at_utc": utc_now(),
+            "source_analysis_release": analysis_release,
+            **contract_release_fields(
+                experiment_dir,
+                stage="robustness-recovery-analysis-ready",
+                output_identity=str(plan["source_run_id"]),
+                input_producer_releases=[
+                    str(source_receipt["output_release"]),
+                    analysis_release,
+                ],
+            ),
+            **result_fingerprints(experiment_dir),
+        },
+    )
+
+
+def validate_source_analysis_ready(
+    experiment_dir: Path, source_experiment_dir: Path, analysis_release: str
+) -> str:
+    """Validate the receipt-producing source analysis gate."""
+    contract = active_run_contract(experiment_dir)
+    if contract is None:
+        raise RuntimeError("Source analysis validation requires a sealed contract")
+    source_receipt = validate_recovery_source_receipt(
+        experiment_dir, source_experiment_dir
+    )
+    receipt = read_json(experiment_dir / "stage_receipts" / "source_analysis_ready.json")
+    expected = {
+        "source_analysis_release": analysis_release,
+        "stage": "robustness-recovery-analysis-ready",
+        "executor_release": contract["executor_release"],
+        "coordinator_release": contract["coordinator_release"],
+        "input_producer_releases": [
+            source_receipt["output_release"],
+            analysis_release,
+        ],
+        "output_release": (
+            f"{contract['executor_release']}:{contract['run_id']}:"
+            f"robustness-recovery-analysis-ready:{source_receipt['source_run_id']}"
+        ),
+        **result_fingerprints(experiment_dir),
+    }
+    if any(receipt.get(key) != value for key, value in expected.items()):
+        raise RuntimeError("Source analysis readiness receipt mismatch")
+    return str(expected["output_release"])
 
 
 def initialize_recovery(
@@ -381,6 +565,7 @@ def validate_recovery_runtime_gates(
     source_experiment_dir: Path,
     *,
     recovery_smoke: bool,
+    recovery_profile: str,
 ) -> list[str]:
     """Validate the GPU doctor and, for terminal jobs, adapter smoke receipt."""
     experiment_dir = experiment_dir.resolve()
@@ -414,11 +599,17 @@ def validate_recovery_runtime_gates(
     ]
     if doctor.get("input_producer_releases") != expected_doctor_inputs:
         raise RuntimeError("Recovery GPU sandbox receipt inputs do not match")
+    source_ready_release = validate_source_profile_ready(
+        experiment_dir, source_experiment_dir, recovery_profile
+    )
     if recovery_smoke:
-        return [doctor_release]
+        return [doctor_release, source_ready_release]
     source_design = read_json(source_experiment_dir / "design.json")
     mixture, seed = grid_arms(source_design)[40]
     smoke_profile = profile_output_name(mixture, seed)
+    smoke_source_ready_release = validate_source_profile_ready(
+        experiment_dir, source_experiment_dir, "40"
+    )
     smoke_done_path = (
         experiment_dir
         / "smoke_robustness_benchmarks"
@@ -446,6 +637,7 @@ def validate_recovery_runtime_gates(
         "input_producer_releases": [
             source_receipt["output_release"],
             doctor_release,
+            smoke_source_ready_release,
             source_release,
         ],
         "output_release": smoke_release,
@@ -457,7 +649,7 @@ def validate_recovery_runtime_gates(
     smoke_results = smoke_done_path.parent / "results.json"
     if smoke.get("results_sha256") != sha256_file(smoke_results):
         raise RuntimeError("Recovery adapter smoke result digest does not match")
-    return [doctor_release, smoke_release]
+    return [doctor_release, smoke_release, source_ready_release]
 
 
 def _copy_required(source: Path, destination: Path) -> None:
@@ -507,6 +699,9 @@ def finalize_recovery(experiment_dir: Path, export_dir: Path) -> None:
         source_experiment_dir / "analysis" / "DONE.json",
         source_fingerprints,
     )
+    analysis_ready_release = validate_source_analysis_ready(
+        experiment_dir, source_experiment_dir, analysis_release
+    )
     release_dir = Path(str(contract["deployment_path"])).resolve()
     required_paths = [
         source_experiment_dir / "analysis",
@@ -552,14 +747,20 @@ def finalize_recovery(experiment_dir: Path, export_dir: Path) -> None:
             + ", ".join(str(path) for path in missing_paths)
         )
     recovery_fingerprints = result_fingerprints(experiment_dir)
-    runtime_releases = validate_recovery_runtime_gates(
-        experiment_dir,
-        source_experiment_dir,
-        recovery_smoke=False,
-    )
     records: list[dict[str, object]] = []
     for item in roster:
         profile = str(item["profile"])
+        recovery_profile = (
+            "baseline"
+            if item["grid_index"] is None
+            else str(item["grid_index"])
+        )
+        runtime_releases = validate_recovery_runtime_gates(
+            experiment_dir,
+            source_experiment_dir,
+            recovery_smoke=False,
+            recovery_profile=recovery_profile,
+        )
         done_path = experiment_dir / "robustness_benchmarks" / profile / "DONE.json"
         done = read_json(done_path)
         source_release = (
@@ -624,6 +825,7 @@ def finalize_recovery(experiment_dir: Path, export_dir: Path) -> None:
                 output_identity="combined-student-export",
                 input_producer_releases=[
                     analysis_release,
+                    analysis_ready_release,
                     *[str(record["output_release"]) for record in records],
                 ],
             ),
@@ -787,6 +989,15 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--experiment-dir", required=True)
     source = sub.add_parser("source-receipt")
     source.add_argument("--experiment-dir", required=True)
+    wait_source = sub.add_parser("wait-source")
+    wait_source.add_argument("--experiment-dir", required=True)
+    wait_source.add_argument("--recovery-profile", required=True)
+    wait_source.add_argument("--timeout-seconds", type=float, default=54_000)
+    wait_source.add_argument("--poll-seconds", type=float, default=30)
+    wait_analysis = sub.add_parser("wait-analysis")
+    wait_analysis.add_argument("--experiment-dir", required=True)
+    wait_analysis.add_argument("--timeout-seconds", type=float, default=54_000)
+    wait_analysis.add_argument("--poll-seconds", type=float, default=30)
     final = sub.add_parser("finalize")
     final.add_argument("--experiment-dir", required=True)
     final.add_argument("--export-dir", required=True)
@@ -804,6 +1015,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     elif args.command == "source-receipt":
         write_recovery_source_receipt(experiment_dir)
+    elif args.command == "wait-source":
+        wait_for_source_profile(
+            experiment_dir,
+            args.recovery_profile,
+            timeout_seconds=args.timeout_seconds,
+            poll_seconds=args.poll_seconds,
+        )
+    elif args.command == "wait-analysis":
+        wait_for_source_analysis(
+            experiment_dir,
+            timeout_seconds=args.timeout_seconds,
+            poll_seconds=args.poll_seconds,
+        )
     elif args.command == "finalize":
         finalize_recovery(experiment_dir, Path(args.export_dir))
     return 0

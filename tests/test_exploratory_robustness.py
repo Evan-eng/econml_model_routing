@@ -344,6 +344,24 @@ class ExploratoryRobustnessTests(unittest.TestCase):
                     ),
                     encoding="utf-8",
                 )
+                recovery.wait_for_source_profile(
+                    recovered,
+                    "baseline",
+                    timeout_seconds=0,
+                    poll_seconds=0,
+                )
+                for index in range(45):
+                    recovery.wait_for_source_profile(
+                        recovered,
+                        str(index),
+                        timeout_seconds=0,
+                        poll_seconds=0,
+                    )
+                recovery.wait_for_source_analysis(
+                    recovered,
+                    timeout_seconds=0,
+                    poll_seconds=0,
+                )
                 recovery_fingerprints = result_fingerprints(recovered)
                 source_gate = json.loads(
                     (recovered / "stage_receipts" / "source.json").read_text(
@@ -387,6 +405,14 @@ class ExploratoryRobustnessTests(unittest.TestCase):
                     f"{EXTENSION_SHA}:extension-run:"
                     f"robustness-recovery-smoke:{smoke_name}"
                 )
+                smoke_ready_release = json.loads(
+                    (
+                        recovered
+                        / "stage_receipts"
+                        / "source_ready"
+                        / f"{smoke_name}.json"
+                    ).read_text(encoding="utf-8")
+                )["output_release"]
                 (smoke_directory / "DONE.json").write_text(
                     json.dumps(
                         {
@@ -397,6 +423,7 @@ class ExploratoryRobustnessTests(unittest.TestCase):
                             "input_producer_releases": [
                                 source_gate,
                                 doctor_release,
+                                smoke_ready_release,
                                 source_releases["arm:40"],
                             ],
                             "output_release": smoke_release,
@@ -414,6 +441,14 @@ class ExploratoryRobustnessTests(unittest.TestCase):
                         if item["grid_index"] is None
                         else source_releases[f"arm:{item['grid_index']}"]
                     )
+                    source_ready_release = json.loads(
+                        (
+                            recovered
+                            / "stage_receipts"
+                            / "source_ready"
+                            / f"{name}.json"
+                        ).read_text(encoding="utf-8")
+                    )["output_release"]
                     directory = recovered / "robustness_benchmarks" / name
                     directory.mkdir(parents=True)
                     results = directory / "results.json"
@@ -429,6 +464,7 @@ class ExploratoryRobustnessTests(unittest.TestCase):
                                     source_gate,
                                     doctor_release,
                                     smoke_release,
+                                    source_ready_release,
                                     source_release,
                                 ],
                                 "output_release": (
