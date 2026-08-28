@@ -57,11 +57,13 @@ class IceSlurmScriptTests(unittest.TestCase):
         self.assertIn("--skip-python-finalization", text)
         self.assertIn("warm-cache", text)
 
-    def test_prepare_uses_only_the_pinned_shared_cache(self) -> None:
+    def test_prepare_enables_network_only_for_the_pinned_input_stage(self) -> None:
         text = (ROOT / "slurm" / "prepare.sbatch").read_text(encoding="utf-8")
 
-        self.assertIn("enable_offline_model_loading", text)
-        self.assertNotIn("unset HF_HUB_OFFLINE", text)
+        self.assertIn(
+            "unset HF_HUB_OFFLINE HF_DATASETS_OFFLINE TRANSFORMERS_OFFLINE",
+            text,
+        )
 
 
 if __name__ == "__main__":

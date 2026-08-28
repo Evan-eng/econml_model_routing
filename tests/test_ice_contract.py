@@ -12,6 +12,35 @@ from ice_contract import ContractError, create_run_contract, validate_run_contra
 
 
 class RunContractTests(unittest.TestCase):
+    def test_prepare_retries_only_rate_limit_failures(self) -> None:
+        args = mock.Mock()
+        sleep = mock.Mock()
+        with mock.patch.object(
+            experiment,
+            "prepare_data",
+            side_effect=[RuntimeError("429 Client Error: Too Many Requests"), None],
+        ) as prepare:
+            experiment.prepare_data_with_rate_limit_retries(args, sleep=sleep)
+
+        self.assertEqual(prepare.call_count, 2)
+        sleep.assert_called_once_with(15)
+
+    def test_prepare_does_not_retry_other_failures(self) -> None:
+        args = mock.Mock()
+        sleep = mock.Mock()
+        with (
+            mock.patch.object(
+                experiment,
+                "prepare_data",
+                side_effect=RuntimeError("dataset schema mismatch"),
+            ) as prepare,
+            self.assertRaisesRegex(RuntimeError, "schema mismatch"),
+        ):
+            experiment.prepare_data_with_rate_limit_retries(args, sleep=sleep)
+
+        prepare.assert_called_once_with(args)
+        sleep.assert_not_called()
+
     def test_prepare_can_skip_broken_interpreter_finalization_after_success(self) -> None:
         with (
             mock.patch.object(experiment, "prepare_data") as prepare,

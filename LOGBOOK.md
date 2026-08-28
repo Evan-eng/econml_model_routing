@@ -405,3 +405,28 @@ Inference: Run `qwen3-8b-confirmatory-20260828T152609Z-ab988a9ea7ed` is
 terminally incomplete and becomes accounting-only. A fresh exact-SHA run is
 required to combine offline preparation with the successful-finalization
 boundary; no incomplete cache files are reused as run artifacts.
+
+[2026-08-28 11:35 EDT] Streaming-cache boundary and bounded rate-limit recovery
+
+Observation: Offline run
+`qwen3-8b-confirmatory-20260828T153021Z-31b02693c37e` completed bootstrap
+`5595010`, then full preparation `5595011` failed in 19 seconds because the
+materialized evaluation datasets were cached but the pinned
+`open-r1/OpenR1-Math-220k` streaming source could not be resolved offline. No
+provenance, preparation receipt, doctor, smoke, or scientific artifact was
+produced.
+
+Action: Restored network access only inside the preparation stage. Added a
+three-attempt application-level retry that recognizes HTTP 429 plus `Too Many
+Requests`, waits 15 then 30 seconds, and restarts the deterministic atomic
+preparation. All other exceptions fail immediately. The success-only
+finalization boundary remains, and all GPU stages remain offline.
+
+Verification: Red-green tests cover one successful 429 recovery, immediate
+propagation of non-rate-limit failures, the finalization boundary, and the
+preparation-only network scope. Ruff, Pyright, 29 Pytest tests, Slurm shell
+syntax, `uv lock --check`, and `git diff --check` pass.
+
+Inference: Run `qwen3-8b-confirmatory-20260828T153021Z-31b02693c37e` is
+terminally incomplete and becomes accounting-only. A fresh exact-SHA run is
+required; no failed preparation job is requeued.

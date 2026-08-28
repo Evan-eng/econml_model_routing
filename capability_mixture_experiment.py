@@ -1157,6 +1157,26 @@ def prepare_data(args: argparse.Namespace) -> None:
     log(f"Prepared and locked experiment cache: {cache_dir}")
 
 
+def prepare_data_with_rate_limit_retries(
+    args: argparse.Namespace,
+    *,
+    attempts: int = 3,
+    sleep: Any = time.sleep,
+) -> None:
+    """Retry only transient Hub rate limits while preparing pinned inputs."""
+    for attempt in range(1, attempts + 1):
+        try:
+            prepare_data(args)
+            return
+        except Exception as exc:
+            message = str(exc).lower()
+            if attempt == attempts or "429" not in message or "too many requests" not in message:
+                raise
+            delay = 15 * (2 ** (attempt - 1))
+            log(f"Hugging Face rate limit during preparation; retrying in {delay}s")
+            sleep(delay)
+
+
 def warm_model_cache(args: argparse.Namespace) -> None:
     """Download the locked model snapshot once before a GPU array fans out."""
     experiment_dir = Path(args.experiment_dir).resolve()
@@ -3592,7 +3612,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "init":
             create_design(args)
         elif args.command == "prepare":
-            prepare_data(args)
+            prepare_data_with_rate_limit_retries(args)
             if args.skip_python_finalization:
                 sys.stdout.flush()
                 sys.stderr.flush()

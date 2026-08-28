@@ -14,7 +14,7 @@ set -euo pipefail
 source "${RELEASE_DIR}/slurm/common.sh"
 activate_ice_environment
 validate_stage_release
-enable_offline_model_loading
+unset HF_HUB_OFFLINE HF_DATASETS_OFFLINE TRANSFORMERS_OFFLINE
 
 srun python "${RELEASE_DIR}/capability_mixture_experiment.py" prepare \
   --experiment-dir "${EXPERIMENT_DIR}" \
