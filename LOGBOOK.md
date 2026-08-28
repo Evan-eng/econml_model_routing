@@ -1092,3 +1092,39 @@ Inference: The four remaining GPU profiles and the CPU rescore release are
 independent critical paths. Continuing both in parallel minimizes wall time;
 neither current scheduler state nor the local probe proves final experiment
 acceptance.
+
+[2026-08-28 18:27 EDT] Exact-SHA MATH rescore extension submitted
+
+Observation: Independent standards and specification reviewers returned PASS
+after the rescore extension fixed full extraction-list matching, unresolved
+verification timeouts, HumanEval byte binding, exact parent and environment
+lineage, submission receipt races, idempotent append-only accounting, and
+terminal-receipt publication ordering. The final local gate passed Ruff,
+Pyright, 95 tests, Bash syntax, diff checks, and ShellCheck with only expected
+dynamic-source notices.
+
+Observation: Topic-branch SHA
+`dc549e0ad61b7d3bcfc1afaf6eef23be9703b44e` was pushed and sealed under
+`/storage/ice-shared/cs7634/staff/econml/releases/econml_model_routing_v3`.
+The release receipt binds `uv.lock`, `pyproject.toml`, `math500_rescore.py`,
+and `slurm/submit_math500_rescore.sh` to the approved origin and exact SHA.
+
+Observation: The new rescore run is
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c-robustness-recovery-20260828T201706Z-aae927901acf-math500-rescore-20260828T222636Z-dc549e0ad61b`.
+Its sealed submission receipt binds bootstrap `5596188`, 46-way parent gate
+`5596189`, 46-way CPU rescore `5596190`, and finalizer `5596191` to release
+`dc549e0ad61b7d3bcfc1afaf6eef23be9703b44e` and the accepted parent source,
+submission, and rescore-source releases. The first direct launcher invocation
+failed before any side effect because the tracked script lacked its executable
+mode; invoking the identical sealed bytes through Bash submitted the chain.
+
+Observation: At the first allocation-only snapshot bootstrap `5596188` was
+RUNNING and the other three stages were dependency-pending. The parent GPU
+recovery had 45 of 46 DONE receipts; allocation `5595998` remained RUNNING and
+parent finalizer `5595936` remained dependency-pending. No failure row or final
+export existed at that snapshot.
+
+Inference: Submission is complete, but result acceptance is not. The next
+gates are all 46 corrected profile receipts, the parent recovery final receipt
+and manifest, the corrected exact manifest, allocation ledgers, and verified
+read-only permissions.
