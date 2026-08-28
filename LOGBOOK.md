@@ -992,3 +992,22 @@ than intervention. Completion remains unproven until the three source arm
 receipts, source analysis receipt, all 46 production robustness receipts,
 recovery `FINALIZED.json`, allocation-only accounting, checksummed manifest,
 and read-only export reconcile.
+
+[2026-08-28 16:40 EDT] Forty-third source arm released its robustness profile
+
+Observation: Source allocation `5595283` completed with exit code 0 after
+3:40:30 and emitted the exact source receipt
+`arms/z_0p6250/seed_0071/DONE.json`. The source run now has 43 of 45 unique arm
+DONE receipts plus its baseline receipt. Source allocations `5595271` and
+`5595282` remain RUNNING, while source analysis remains dependency-pending.
+
+Observation: The corresponding previously gated production robustness
+allocation `5596010` started automatically and remained RUNNING at the next
+allocation-only accounting snapshot. This raised the production robustness
+fan-out from 43 to 44 active profiles without retraining or manual dependency
+repair. The other production allocations remained RUNNING with no terminal
+failure row and no production DONE receipt yet.
+
+Inference: The per-profile source-gate dependency behaves as designed. The
+remaining two robustness profiles should release independently when their two
+source DONE receipts appear; no scheduler intervention is currently warranted.
