@@ -24,6 +24,7 @@ source "${RELEASE_DIR}/slurm/common.sh"
 activate_ice_environment
 validate_stage_release
 enable_offline_model_loading
+ensure_cuda_allocation_or_requeue
 
 srun python "${RELEASE_DIR}/capability_mixture_experiment.py" evaluate-baseline \
   --experiment-dir "${EXPERIMENT_DIR}" \

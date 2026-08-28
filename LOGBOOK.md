@@ -452,3 +452,33 @@ three tasks of smoke array `5595036` RUNNING concurrently on allocated H100s.
 This proves the preparation repairs operationally, but it is launch evidence
 only: the smoke gate, full grid, robustness, analysis, final manifest, and
 export remain pending terminal receipts.
+
+[2026-08-28 12:37 EDT] CUDA allocation failure recovery hardening
+
+Observation: The accepted smoke gate released full baseline `5595038`, endpoint
+array `5595039`, and remaining array `5595040` at 11:42 EDT. At 12:36 EDT the
+baseline and 39 unique arms remained RUNNING after about 54 minutes, while six
+remaining-array tasks had failed after 30 seconds with exit `1:0`. Their stderr
+reports the exact infrastructure error `CUDA-capable device(s) is/are busy or
+unavailable`; the failed cells are indices 6, 10, 14, 15, 17, and 21. No
+baseline or arm DONE receipt existed at this observation.
+
+Action: Added a pre-scientific CUDA allocation probe to baseline, arm, and
+robustness GPU workers. Only that exact unavailable-device error requeues the
+same receipted Slurm job or array task, and only while
+`SLURM_RESTART_COUNT + 1 < MAX_ATTEMPTS`. OOM, scientific exceptions, all
+other probe failures, and exhausted attempts retain their original nonzero
+exit without automatic recovery. Existing jobs were neither cancelled nor
+altered.
+
+Verification: Red-green tests cover same-job requeue, the sealed attempt
+limit, non-retry of OOM, and probe ordering before scientific work. Ruff,
+Pyright, all 33 Pytest tests, Slurm shell syntax, `uv lock --check`, and
+`git diff --check` pass. The requested clean reviewer agent was unavailable;
+a local standards/spec review found no additional issue.
+
+Inference: The 39 running arms may still yield valid accounting evidence and
+scientific artifacts, but this run cannot satisfy the frozen 45-arm acceptance
+gate because the failed jobs have left controller state and cannot be requeued
+in place. A fresh exact-SHA replacement chain is required to validate the
+bounded recovery on live allocations and produce a complete accepted run.

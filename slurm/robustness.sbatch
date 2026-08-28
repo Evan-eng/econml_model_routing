@@ -17,6 +17,7 @@ source "${RELEASE_DIR:?Set RELEASE_DIR}/slurm/common.sh"
 activate_ice_environment
 validate_stage_release
 enable_offline_model_loading
+ensure_cuda_allocation_or_requeue
 profiles=(baseline 0:11 0.5:11 1:11)
 profile="${profiles[SLURM_ARRAY_TASK_ID]}"
 srun python "${RELEASE_DIR}/run_benchmark_robustness.py" \

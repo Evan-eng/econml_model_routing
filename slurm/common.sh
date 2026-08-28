@@ -18,6 +18,30 @@ enable_offline_model_loading() {
   export TRANSFORMERS_OFFLINE=1
 }
 
+ensure_cuda_allocation_or_requeue() {
+  local output
+  local status
+  local restart_count
+
+  if output="$(srun python -c 'import torch; torch.empty(1, device="cuda"); torch.cuda.synchronize()' 2>&1)"; then
+    return 0
+  else
+    status=$?
+  fi
+
+  printf '%s\n' "${output}" >&2
+  if [[ "${output}" == *"CUDA-capable device(s) is/are busy or unavailable"* ]]; then
+    restart_count="${SLURM_RESTART_COUNT:-0}"
+    if (( restart_count + 1 < ${MAX_ATTEMPTS:-3} )); then
+      printf 'CUDA allocation unavailable; requeueing job %s for attempt %d\n' \
+        "${SLURM_JOB_ID:?Set SLURM_JOB_ID}" "$((restart_count + 2))" >&2
+      scontrol requeue "${SLURM_JOB_ID}"
+      exit 0
+    fi
+  fi
+  return "${status}"
+}
+
 validate_stage_release() {
   : "${EXPERIMENT_DIR:?Set EXPERIMENT_DIR}"
   : "${RELEASE_SHA:?Set RELEASE_SHA}"

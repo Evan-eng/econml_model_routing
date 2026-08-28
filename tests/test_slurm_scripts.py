@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -8,6 +9,69 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class IceSlurmScriptTests(unittest.TestCase):
+    def test_busy_cuda_allocation_requeues_same_receipted_job(self) -> None:
+        script = f"""
+source {ROOT / 'slurm' / 'common.sh'}
+srun() {{ printf '%s\\n' 'CUDA-capable device(s) is/are busy or unavailable' >&2; return 1; }}
+scontrol() {{ printf 'scontrol:%s\\n' "$*"; }}
+export SLURM_JOB_ID=12345
+export SLURM_RESTART_COUNT=0
+export MAX_ATTEMPTS=3
+ensure_cuda_allocation_or_requeue
+"""
+
+        completed = subprocess.run(
+            ["bash", "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("scontrol:requeue 12345", completed.stdout)
+
+    def test_cuda_probe_does_not_requeue_scientific_failures(self) -> None:
+        script = f"""
+source {ROOT / 'slurm' / 'common.sh'}
+srun() {{ printf '%s\\n' 'CUDA out of memory' >&2; return 7; }}
+scontrol() {{ printf 'unexpected-requeue:%s\\n' "$*"; }}
+export SLURM_JOB_ID=12345
+export SLURM_RESTART_COUNT=0
+export MAX_ATTEMPTS=3
+ensure_cuda_allocation_or_requeue
+"""
+
+        completed = subprocess.run(
+            ["bash", "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 7)
+        self.assertNotIn("unexpected-requeue", completed.stdout)
+
+    def test_cuda_probe_honors_attempt_limit(self) -> None:
+        script = f"""
+source {ROOT / 'slurm' / 'common.sh'}
+srun() {{ printf '%s\\n' 'CUDA-capable device(s) is/are busy or unavailable' >&2; return 1; }}
+scontrol() {{ printf 'unexpected-requeue:%s\\n' "$*"; }}
+export SLURM_JOB_ID=12345
+export SLURM_RESTART_COUNT=2
+export MAX_ATTEMPTS=3
+ensure_cuda_allocation_or_requeue
+"""
+
+        completed = subprocess.run(
+            ["bash", "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertNotIn("unexpected-requeue", completed.stdout)
+
     def test_gpu_jobs_use_ice_hx00_resources_and_bwrap(self) -> None:
         for name in ("baseline.sbatch", "run_array.sbatch", "robustness.sbatch"):
             text = (ROOT / "slurm" / name).read_text(encoding="utf-8")
@@ -19,6 +83,15 @@ class IceSlurmScriptTests(unittest.TestCase):
             self.assertNotIn("#SBATCH --partition", text, name)
             self.assertIn("srun", text, name)
             self.assertIn("--code-sandbox bwrap", text, name)
+
+    def test_gpu_jobs_probe_cuda_before_scientific_work(self) -> None:
+        for name in ("baseline.sbatch", "run_array.sbatch", "robustness.sbatch"):
+            text = (ROOT / "slurm" / name).read_text(encoding="utf-8")
+            probe = text.index("ensure_cuda_allocation_or_requeue")
+            validation = text.index("validate_stage_release")
+            scientific_work = text.rindex("srun python")
+            self.assertLess(validation, probe, name)
+            self.assertLess(probe, scientific_work, name)
 
     def test_submitter_requests_full_parallel_grid_and_all_terminal_dependencies(self) -> None:
         text = (ROOT / "slurm" / "submit_ice_confirmatory.sh").read_text(encoding="utf-8")
