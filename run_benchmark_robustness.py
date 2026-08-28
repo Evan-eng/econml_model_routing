@@ -4,14 +4,61 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
+import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Mapping, Sequence
+
+from capability_mixture_experiment import (
+    active_run_contract,
+    contract_release_fields,
+    read_json,
+    result_fingerprints,
+    sha256_file,
+    utc_now,
+    write_json,
+)
+from code_sandbox import build_bwrap_command, require_bwrap
 
 
 DEFAULT_TASKS = "hendrycks_math500,humaneval_instruct"
+
+
+def sandboxed_lm_eval_command(
+    *,
+    inner_command: Sequence[str],
+    experiment_dir: Path,
+    output_dir: Path,
+    environment_root: Path,
+    base_environment_root: Path | None = None,
+    hf_home: Path,
+    bwrap_path: Path,
+    environment: Mapping[str, str],
+) -> list[str]:
+    """Wrap lm-eval in the networkless GPU-capable execution boundary."""
+    return build_bwrap_command(
+        work_dir=output_dir,
+        argv=inner_command,
+        bwrap_path=bwrap_path,
+        read_only_paths=[
+            experiment_dir,
+            environment_root,
+            *([base_environment_root] if base_environment_root else []),
+            hf_home,
+            *[
+                Path(path)
+                for path in environment.get("LD_LIBRARY_PATH", "").split(":")
+                if path and Path(path).is_dir()
+            ],
+        ],
+        device_access=True,
+        environment=environment,
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,6 +87,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="required for HumanEval; use only in a disposable isolated environment",
     )
+    parser.add_argument("--code-sandbox", choices=["bwrap"])
     return parser.parse_args()
 
 
@@ -67,7 +115,9 @@ def parse_profiles(raw: str | None, design: dict[str, object]) -> list[dict[str,
             mixture = float(mixture_text)
             seed = int(seed_text)
         except ValueError as exc:
-            raise ValueError(f"Invalid profile {item!r}; expected baseline or MIXTURE:SEED") from exc
+            raise ValueError(
+                f"Invalid profile {item!r}; expected baseline or MIXTURE:SEED"
+            ) from exc
         if not any(abs(mixture - value) < 1e-9 for value in mixtures):
             raise ValueError(f"Mixture {mixture} is not in the design")
         if seed not in seeds:
@@ -76,14 +126,65 @@ def parse_profiles(raw: str | None, design: dict[str, object]) -> list[dict[str,
             {
                 "name": f"z_{mixture_label(mixture)}_seed_{seed:04d}",
                 "adapter_relative": (
-                    Path("arms")
-                    / f"z_{mixture_label(mixture)}"
-                    / f"seed_{seed:04d}"
-                    / "adapter"
+                    Path("arms") / f"z_{mixture_label(mixture)}" / f"seed_{seed:04d}" / "adapter"
                 ),
             }
         )
     return profiles
+
+
+def profile_input_release(experiment_dir: Path, profile: Mapping[str, object]) -> str:
+    """Return the verified baseline or arm release consumed by one profile."""
+    adapter_relative = profile.get("adapter_relative")
+    done_path = (
+        experiment_dir / "baseline" / "DONE.json"
+        if adapter_relative is None
+        else experiment_dir / Path(str(adapter_relative)).parent / "DONE.json"
+    )
+    receipt = read_json(done_path)
+    fingerprints = result_fingerprints(experiment_dir)
+    if any(receipt.get(key) != value for key, value in fingerprints.items()):
+        raise RuntimeError(f"Robustness input receipt does not match this run: {done_path}")
+    output_release = receipt.get("output_release")
+    if not isinstance(output_release, str) or not output_release:
+        raise RuntimeError(f"Robustness input receipt has no output release: {done_path}")
+    return output_release
+
+
+def write_pinned_task_configs(
+    *, output_dir: Path, task_root: Path, revisions: Mapping[str, str]
+) -> list[str]:
+    """Create lm-eval task overrides that name the prepared dataset commits."""
+    specs = [
+        (
+            "routing_math500",
+            task_root / "hendrycks_math" / "hendrycks_math500.yaml",
+            revisions["math500"],
+        ),
+        (
+            "routing_humaneval",
+            task_root / "humaneval" / "humaneval_instruct.yaml",
+            revisions["humaneval"],
+        ),
+    ]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for task_name, include_path, revision in specs:
+        if not include_path.is_file() and task_root.exists():
+            raise FileNotFoundError(f"Installed lm-eval task is missing: {include_path}")
+        (output_dir / f"{task_name}.yaml").write_text(
+            json.dumps(
+                {
+                    "include": str(include_path),
+                    "task": task_name,
+                    "dataset_kwargs": {"revision": revision},
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    return [task_name for task_name, _, _ in specs]
 
 
 def main() -> int:
@@ -95,20 +196,55 @@ def main() -> int:
             "HumanEval/MBPP execute generated Python. Re-run only inside a disposable, "
             "network-disabled environment with --allow-generated-code-execution."
         )
+    if unsafe_tasks.intersection(tasks) and args.code_sandbox != "bwrap":
+        raise SystemExit("HumanEval/MBPP require --code-sandbox=bwrap")
     experiment_dir = Path(args.experiment_dir).resolve()
+    active_run_contract(experiment_dir, require_prepared_receipt=True)
+    bwrap_path = require_bwrap()
     design = json.loads((experiment_dir / "design.json").read_text(encoding="utf-8"))
-    provenance = json.loads(
-        (experiment_dir / "provenance.json").read_text(encoding="utf-8")
-    )
+    provenance = json.loads((experiment_dir / "provenance.json").read_text(encoding="utf-8"))
+    if tasks != DEFAULT_TASKS.split(","):
+        raise ValueError("Sealed robustness runs require MATH-500 and HumanEval")
+    robustness_datasets = provenance.get("robustness_datasets")
+    if not isinstance(robustness_datasets, dict):
+        raise RuntimeError("Prepared robustness dataset provenance is missing")
+    dataset_revisions = {
+        name: str(robustness_datasets[name]["revision"]) for name in ("math500", "humaneval")
+    }
+    lm_eval_module = importlib.import_module("lm_eval")
+    task_root = Path(str(lm_eval_module.__file__)).resolve().parent / "tasks"
     profiles = parse_profiles(args.profiles, design)
     output_root = experiment_dir / "robustness_benchmarks"
     output_root.mkdir(parents=True, exist_ok=True)
+    hf_home = Path(os.environ.get("HF_HOME", experiment_dir / "hf_cache")).resolve()
+    sandbox_environment = {
+        key: value
+        for key in (
+            "CUDA_VISIBLE_DEVICES",
+            "HF_DATASETS_CACHE",
+            "HF_DATASETS_OFFLINE",
+            "HF_HOME",
+            "HF_HUB_OFFLINE",
+            "LD_LIBRARY_PATH",
+            "NVIDIA_VISIBLE_DEVICES",
+            "PYTORCH_CUDA_ALLOC_CONF",
+            "TOKENIZERS_PARALLELISM",
+            "TRANSFORMERS_CACHE",
+            "TRANSFORMERS_OFFLINE",
+        )
+        if (value := os.environ.get(key)) is not None
+    }
+    sandbox_environment.setdefault("HF_HOME", str(hf_home))
+    sandbox_environment.setdefault("HF_DATASETS_OFFLINE", "1")
+    sandbox_environment.setdefault("HF_HUB_OFFLINE", "1")
+    sandbox_environment.setdefault("TRANSFORMERS_OFFLINE", "1")
     records: list[dict[str, object]] = []
     failures = 0
     for profile in profiles:
         profile_name = str(profile["name"])
+        input_release = profile_input_release(experiment_dir, profile)
         adapter_relative = profile.get("adapter_relative")
-        adapter = experiment_dir / adapter_relative if adapter_relative else None
+        adapter = experiment_dir / Path(str(adapter_relative)) if adapter_relative else None
         if adapter is not None and not (adapter / "adapter_config.json").exists():
             raise FileNotFoundError(f"Adapter is missing or incomplete: {adapter}")
         model_args = [
@@ -123,15 +259,26 @@ def main() -> int:
             model_args.append(f"peft={adapter}")
         output_path = output_root / profile_name / "results.json"
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        command = [
-            "lm-eval",
+        task_config_dir = output_path.parent / "task_configs"
+        pinned_tasks = write_pinned_task_configs(
+            output_dir=task_config_dir,
+            task_root=task_root,
+            revisions=dataset_revisions,
+        )
+        lm_eval = shutil.which("lm-eval")
+        if lm_eval is None and not args.dry_run:
+            raise FileNotFoundError("lm-eval is not installed in the frozen environment")
+        inner_command = [
+            lm_eval or "lm-eval",
             "run",
             "--model",
             "hf",
             "--model_args",
             ",".join(model_args),
             "--tasks",
-            ",".join(tasks),
+            ",".join(pinned_tasks),
+            "--include_path",
+            str(task_config_dir),
             "--apply_chat_template",
             "--batch_size",
             str(args.batch_size),
@@ -140,9 +287,19 @@ def main() -> int:
             "--log_samples",
         ]
         if unsafe_tasks.intersection(tasks):
-            command.append("--confirm_run_unsafe_code")
+            inner_command.append("--confirm_run_unsafe_code")
         if args.limit is not None:
-            command.extend(["--limit", str(args.limit)])
+            inner_command.extend(["--limit", str(args.limit)])
+        command = sandboxed_lm_eval_command(
+            inner_command=inner_command,
+            experiment_dir=experiment_dir,
+            output_dir=output_path.parent,
+            environment_root=Path(sys.prefix),
+            base_environment_root=Path(sys.base_prefix),
+            hf_home=hf_home,
+            bwrap_path=bwrap_path,
+            environment=sandbox_environment,
+        )
         print(shlex.join(command), flush=True)
         return_code = 0 if args.dry_run else subprocess.run(command, check=False).returncode
         records.append(
@@ -150,18 +307,43 @@ def main() -> int:
                 "profile": profile_name,
                 "adapter": str(adapter) if adapter else None,
                 "tasks": tasks,
+                "pinned_tasks": pinned_tasks,
+                "dataset_revisions": dataset_revisions,
                 "command": command,
                 "return_code": return_code,
                 "output_path": str(output_path),
             }
         )
+        (output_path.parent / "run_manifest.json").write_text(
+            json.dumps(records[-1:], indent=2) + "\n", encoding="utf-8"
+        )
+        if args.dry_run:
+            continue
         if return_code:
             failures += 1
             if not args.keep_going:
                 break
-    (output_root / "run_manifest.json").write_text(
-        json.dumps(records, indent=2) + "\n", encoding="utf-8"
-    )
+        else:
+            if not output_path.is_file():
+                raise FileNotFoundError(
+                    f"lm-eval exited successfully without its result artifact: {output_path}"
+                )
+            write_json(
+                output_path.parent / "DONE.json",
+                {
+                    "completed_at_utc": utc_now(),
+                    "profile": profile_name,
+                    "tasks": tasks,
+                    "results_sha256": sha256_file(output_path),
+                    **contract_release_fields(
+                        experiment_dir,
+                        stage="robustness",
+                        output_identity=profile_name,
+                        input_producer_releases=[input_release],
+                    ),
+                    **result_fingerprints(experiment_dir),
+                },
+            )
     if failures:
         print(f"{failures} robustness profile(s) failed", file=sys.stderr)
         return 1

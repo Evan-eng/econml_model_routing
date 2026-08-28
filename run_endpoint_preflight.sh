@@ -30,7 +30,8 @@ python "${ARTIFACT_DIR}/launch_local_gpu_pool.py" \
   --gpus "${GPUS}" \
   --mixtures 0,0.5,1 \
   --seeds "${PREFLIGHT_SEED}" \
-  --allow-generated-code-execution
+  --allow-generated-code-execution \
+  --code-sandbox bwrap
 python "${ARTIFACT_DIR}/capability_mixture_experiment.py" endpoint-report \
   --experiment-dir "${EXPERIMENT_DIR}" \
   --seed "${PREFLIGHT_SEED}"

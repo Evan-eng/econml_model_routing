@@ -27,6 +27,7 @@ python "${ARTIFACT_DIR}/capability_mixture_experiment.py" warm-cache \
 python "${ARTIFACT_DIR}/launch_local_gpu_pool.py" \
   --experiment-dir "${EXPERIMENT_DIR}" \
   --gpus "${GPUS}" \
-  --allow-generated-code-execution
+  --allow-generated-code-execution \
+  --code-sandbox bwrap
 python "${ARTIFACT_DIR}/capability_mixture_experiment.py" analyze \
   --experiment-dir "${EXPERIMENT_DIR}"
