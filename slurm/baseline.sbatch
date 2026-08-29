@@ -1,28 +1,32 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=frontier-baseline
+#SBATCH --qos=coe-ice
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
+#SBATCH --constraint=HX00
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
-#SBATCH --time=04:00:00
+#SBATCH --mem-per-gpu=224G
+#SBATCH --tmp=50G
+#SBATCH --time=15:30:00
+#SBATCH --requeue
 
 set -euo pipefail
 
 : "${EXPERIMENT_DIR:?Set EXPERIMENT_DIR to the initialized experiment directory}"
-: "${ARTIFACT_DIR:?Set ARTIFACT_DIR to the unzipped GPU artifact directory}"
+: "${RELEASE_DIR:?Set RELEASE_DIR}"
 
 if [[ "${ALLOW_CODE_EXECUTION:-0}" != "1" ]]; then
   echo "Set ALLOW_CODE_EXECUTION=1 only inside a disposable, network-isolated environment." >&2
   exit 2
 fi
-if [[ -n "${VENV_ACTIVATE:-}" ]]; then
-  source "${VENV_ACTIVATE}"
-fi
+source "${RELEASE_DIR}/slurm/common.sh"
+activate_ice_environment
+validate_stage_release
+enable_offline_model_loading
+ensure_cuda_allocation_or_requeue
 
-export HF_HOME="${HF_HOME:-${EXPERIMENT_DIR}/hf_cache}"
-export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-${HF_HOME}/datasets}"
-export TOKENIZERS_PARALLELISM=false
-export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
-
-python "${ARTIFACT_DIR}/capability_mixture_experiment.py" evaluate-baseline \
+srun python "${RELEASE_DIR}/capability_mixture_experiment.py" evaluate-baseline \
   --experiment-dir "${EXPERIMENT_DIR}" \
-  --allow-generated-code-execution
+  --allow-generated-code-execution \
+  --code-sandbox bwrap

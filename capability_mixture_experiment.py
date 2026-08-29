@@ -36,10 +36,9 @@ Base model: Qwen/Qwen3-8B
 
 Typical GPU-cluster workflow
 ----------------------------
-Install the optional training dependencies::
+Install the frozen training dependencies::
 
-    pip install torch transformers datasets peft accelerate bitsandbytes \
-        huggingface_hub numpy matplotlib
+    uv sync --frozen --extra robustness
 
 Create the default overnight Qwen3-8B design, prepare the locked datasets, and warm a
 shared Hugging Face cache before launching one independent GPU job per arm::
@@ -48,7 +47,7 @@ shared Hugging Face cache before launching one independent GPU job per arm::
     python capability_mixture_experiment.py prepare --experiment-dir exp
     python capability_mixture_experiment.py warm-cache --experiment-dir exp
     python capability_mixture_experiment.py run-array-arm --experiment-dir exp \
-        --index 0 --allow-generated-code-execution
+        --index 0 --allow-generated-code-execution --code-sandbox bwrap
 
 The included Slurm launcher maps array indices to preregistered arms. Re-running
 the array is resumable: completed arms whose design and provenance fingerprints
@@ -68,7 +67,7 @@ Run the grid.  MBPP scoring executes model-generated Python, so do this only
 inside a disposable container/VM and acknowledge it explicitly::
 
     python capability_mixture_experiment.py run-grid --experiment-dir exp \
-        --allow-generated-code-execution
+        --allow-generated-code-execution --code-sandbox bwrap
 
 Aggregate, fit, bootstrap, and plot::
 
@@ -77,7 +76,8 @@ Aggregate, fit, bootstrap, and plot::
 Run one arm (useful for a scheduler or multiple machines)::
 
     python capability_mixture_experiment.py run-arm --experiment-dir exp \
-        --mixture 0.5 --seed 29 --allow-generated-code-execution
+        --mixture 0.5 --seed 29 --allow-generated-code-execution \
+        --code-sandbox bwrap
 
 Offline verification (no model or dataset download)::
 
@@ -85,11 +85,10 @@ Offline verification (no model or dataset download)::
 
 Safety
 ------
-MBPP pass@1 requires executing generated Python.  Static filtering and a
-resource-limited isolated subprocess reduce risk but are NOT a security
-boundary.  The script refuses to execute generated code without the explicit
---allow-generated-code-execution flag.  Run that stage in an unprivileged,
-network-disabled disposable container or VM.
+MBPP pass@1 requires executing generated Python. The script requires both the
+explicit --allow-generated-code-execution flag and a verified
+--code-sandbox=bwrap boundary. Static filtering, isolated mode, timeouts, and
+resource limits remain defense in depth inside that boundary.
 """
 
 from __future__ import annotations
@@ -102,6 +101,7 @@ import datetime as dt
 import gc
 import hashlib
 import inspect
+import importlib.metadata
 import json
 import math
 import os
@@ -115,7 +115,10 @@ import tempfile
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
+
+from code_sandbox import build_bwrap_command, require_bwrap, sandbox_doctor
+from ice_contract import CONTRACT_FILENAME, create_run_contract, validate_run_contract
 
 SCRIPT_VERSION = "1.5.0"
 DESIGN_FILENAME = "design.json"
@@ -123,6 +126,7 @@ PROVENANCE_FILENAME = "provenance.json"
 PREPARED_MARKER = "PREPARED.json"
 
 MODEL_DEFAULT = "Qwen/Qwen3-8B"
+PINNED_MODEL_REVISION = "b968826d9c46dd6066d109eabc6255188de91218"
 FULL_EVAL_SPLIT_SIZES = {"math": 1_319, "code": 257}
 DATASETS = {
     "math_train": {
@@ -153,6 +157,26 @@ DATASETS = {
         "license": "CC-BY-4.0",
         "url": "https://huggingface.co/datasets/google-research-datasets/mbpp",
     },
+}
+ROBUSTNESS_DATASETS = {
+    "math500": {
+        "repo_id": "HuggingFaceH4/MATH-500",
+        "config": "default",
+        "split": "test",
+    },
+    "humaneval": {
+        "repo_id": "openai/openai_humaneval",
+        "config": None,
+        "split": "test",
+    },
+}
+PINNED_DATASET_REVISIONS = {
+    "math_train": "e4e141ec9dea9f8326f4d347be56105859b2bd68",
+    "code_train": "356bb069eee815daa6e23e9a282eeefe1490ad44",
+    "math_eval": "740312add88f781978c0658806c59bc2815b9866",
+    "code_eval": "4bb6404fdc6cacfda99d4ac4205087b89d32030c",
+    "math500": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+    "humaneval": "7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
 }
 
 PRESETS: dict[str, dict[str, Any]] = {
@@ -210,27 +234,40 @@ SAFE_IMPORT_ROOTS = {
     "heapq",
     "itertools",
     "math",
-    "operator",
     "random",
     "re",
     "statistics",
-    "string",
-    "typing",
 }
 BANNED_CALL_NAMES = {
+    "attrgetter",
     "breakpoint",
     "compile",
+    "delattr",
     "eval",
     "exec",
     "exit",
     "globals",
+    "getattr",
     "help",
     "input",
     "locals",
+    "methodcaller",
     "open",
     "quit",
+    "setattr",
     "vars",
     "__import__",
+}
+BANNED_ATTRIBUTE_NAMES = {"attrgetter", "methodcaller", "modules", "os", "sys"}
+BANNED_GLOBAL_NAMES = {"builtins", "os", "pathlib", "socket", "subprocess", "sys"}
+BANNED_PRIVATE_STRINGS = {
+    "__builtins__",
+    "__class__",
+    "__dict__",
+    "__import__",
+    "_exit",
+    "_os",
+    "_sys",
 }
 
 
@@ -251,11 +288,12 @@ def json_safe(value: Any) -> Any:
         return {str(k): json_safe(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [json_safe(v) for v in value]
-    if dataclasses.is_dataclass(value):
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return json_safe(dataclasses.asdict(value))
-    if hasattr(value, "item"):
+    item = getattr(value, "item", None)
+    if callable(item):
         try:
-            return value.item()
+            return item()
         except Exception:
             pass
     return str(value)
@@ -281,8 +319,7 @@ def atomic_write_text(path: Path, text: str) -> None:
 def write_json(path: Path, value: Any) -> None:
     atomic_write_text(
         path,
-        json.dumps(json_safe(value), indent=2, ensure_ascii=False, sort_keys=True)
-        + "\n",
+        json.dumps(json_safe(value), indent=2, ensure_ascii=False, sort_keys=True) + "\n",
     )
 
 
@@ -375,9 +412,7 @@ def arm_dir(experiment_dir: Path, mixture: float, seed: int) -> Path:
 def grid_arms(design: Mapping[str, Any]) -> list[tuple[float, int]]:
     """Return the preregistered arm order used by local and Slurm launchers."""
     return [
-        (float(mixture), int(seed))
-        for mixture in design["mixtures"]
-        for seed in design["seeds"]
+        (float(mixture), int(seed)) for mixture in design["mixtures"] for seed in design["seeds"]
     ]
 
 
@@ -388,6 +423,206 @@ def load_design(experiment_dir: Path) -> dict[str, Any]:
     design = read_json(path)
     validate_design(design)
     return design
+
+
+def active_run_contract(
+    experiment_dir: Path, *, require_prepared_receipt: bool = False
+) -> dict[str, Any] | None:
+    """Validate a sealed run when one is present, preserving legacy local use."""
+    configured = os.environ.get("RUN_CONTRACT_PATH")
+    contract_path = Path(configured) if configured else experiment_dir / CONTRACT_FILENAME
+    if not contract_path.is_file():
+        if configured:
+            raise FileNotFoundError(f"Configured run contract is missing: {contract_path}")
+        return None
+    release = os.environ.get("EXECUTOR_RELEASE")
+    if not release:
+        raise RuntimeError("EXECUTOR_RELEASE is required for a sealed experiment")
+    contract = validate_run_contract(
+        contract_path,
+        expected_release=release,
+        expected_experiment_dir=experiment_dir,
+    )
+    attempt = int(os.environ.get("SLURM_RESTART_COUNT", "0")) + 1
+    if attempt > int(contract["max_attempts"]):
+        raise RuntimeError(
+            f"Attempt {attempt} exceeds the sealed maximum {contract['max_attempts']}"
+        )
+    if require_prepared_receipt:
+        receipt_path = experiment_dir / "stage_receipts" / "prepare.json"
+        if not receipt_path.is_file():
+            raise FileNotFoundError(f"Preparation stage receipt is missing: {receipt_path}")
+        receipt = read_json(receipt_path)
+        expected = {
+            "stage": "prepare",
+            "executor_release": release,
+            "coordinator_release": release,
+            "output_release": (f"{contract['executor_release']}:{contract['run_id']}:prepare"),
+            "run_contract_sha256": sha256_file(contract_path),
+            "design_sha256": sha256_file(experiment_dir / DESIGN_FILENAME),
+            "provenance_sha256": sha256_file(experiment_dir / PROVENANCE_FILENAME),
+            "model_cache_ready_sha256": sha256_file(experiment_dir / "MODEL_CACHE_READY.json"),
+        }
+        if any(receipt.get(key) != value for key, value in expected.items()):
+            raise RuntimeError("Preparation stage receipt does not match this execution tuple")
+    return contract
+
+
+def result_fingerprints(experiment_dir: Path) -> dict[str, str]:
+    """Return immutable identities copied into terminal result receipts."""
+    fingerprints = {
+        "design_sha256": sha256_file(experiment_dir / DESIGN_FILENAME),
+        "provenance_sha256": sha256_file(experiment_dir / PROVENANCE_FILENAME),
+    }
+    contract_path = experiment_dir / CONTRACT_FILENAME
+    if contract_path.is_file():
+        contract = read_json(contract_path)
+        fingerprints["run_contract_sha256"] = sha256_file(contract_path)
+        fingerprints["executor_release"] = str(contract["executor_release"])
+    return fingerprints
+
+
+def write_prepare_stage_receipt(experiment_dir: Path) -> None:
+    """Receipt the complete input-producing stage after cache warming."""
+    contract = active_run_contract(experiment_dir)
+    if contract is None:
+        return
+    contract_path = experiment_dir / CONTRACT_FILENAME
+    environment_receipt_path = os.environ.get("ENVIRONMENT_RECEIPT")
+    input_releases: list[str] = []
+    if environment_receipt_path:
+        environment_receipt = read_json(Path(environment_receipt_path))
+        expected_environment = {
+            "stage": "environment",
+            "executor_release": contract["executor_release"],
+            "coordinator_release": contract["coordinator_release"],
+            "dependency_lock_sha256": contract["dependency_lock_sha256"],
+        }
+        if any(
+            environment_receipt.get(key) != value for key, value in expected_environment.items()
+        ):
+            raise RuntimeError("Environment receipt does not match the executor release")
+        environment_release = environment_receipt.get("output_release")
+        if not isinstance(environment_release, str) or not environment_release:
+            raise RuntimeError("Environment receipt has no output release")
+        input_releases.append(environment_release)
+    receipt = {
+        "stage": "prepare",
+        "completed_at_utc": utc_now(),
+        "executor_release": contract["executor_release"],
+        "coordinator_release": contract["coordinator_release"],
+        "input_producer_releases": input_releases,
+        "dual_release_policy": "none",
+        "pre_side_effect_release_gate": "active_run_contract",
+        "output_release": (f"{contract['executor_release']}:{contract['run_id']}:prepare"),
+        "run_contract_sha256": sha256_file(contract_path),
+        "design_sha256": sha256_file(experiment_dir / DESIGN_FILENAME),
+        "provenance_sha256": sha256_file(experiment_dir / PROVENANCE_FILENAME),
+        "model_cache_ready_sha256": sha256_file(experiment_dir / "MODEL_CACHE_READY.json"),
+    }
+    receipt_path = experiment_dir / "stage_receipts" / "prepare.json"
+    if receipt_path.exists():
+        existing = read_json(receipt_path)
+        identity_keys = set(receipt) - {"completed_at_utc"}
+        if any(existing.get(key) != receipt[key] for key in identity_keys):
+            raise RuntimeError("Refusing to replace a conflicting preparation receipt")
+        return
+    write_json(receipt_path, receipt)
+
+
+def contract_release_fields(
+    experiment_dir: Path,
+    *,
+    stage: str,
+    output_identity: str,
+    input_producer_releases: Sequence[str],
+) -> dict[str, Any]:
+    """Return the role tuple copied into any sealed stage receipt."""
+    contract_path = experiment_dir / CONTRACT_FILENAME
+    if not contract_path.is_file():
+        return {}
+    contract = read_json(contract_path)
+    return {
+        "stage": stage,
+        "executor_release": contract["executor_release"],
+        "coordinator_release": contract["coordinator_release"],
+        "input_producer_releases": list(input_producer_releases),
+        "dual_release_policy": "none",
+        "pre_side_effect_release_gate": "active_run_contract",
+        "output_release": (
+            f"{contract['executor_release']}:{contract['run_id']}:{stage}:{output_identity}"
+        ),
+    }
+
+
+def stage_release_fields(
+    experiment_dir: Path, *, stage: str, output_identity: str
+) -> dict[str, Any]:
+    """Return a role tuple for a stage consuming the prepared experiment."""
+    contract_path = experiment_dir / CONTRACT_FILENAME
+    if not contract_path.is_file():
+        return {}
+    prepare = read_json(experiment_dir / "stage_receipts" / "prepare.json")
+    return contract_release_fields(
+        experiment_dir,
+        stage=stage,
+        output_identity=output_identity,
+        input_producer_releases=[str(prepare["output_release"])],
+    )
+
+
+def validated_result_release(path: Path, fingerprints: Mapping[str, str]) -> str:
+    """Validate a terminal result receipt and return its output release."""
+    receipt = read_json(path)
+    if any(receipt.get(key) != value for key, value in fingerprints.items()):
+        raise RuntimeError(f"Terminal receipt does not match this run: {path}")
+    output_release = receipt.get("output_release")
+    if not isinstance(output_release, str) or not output_release:
+        raise RuntimeError(f"Terminal receipt has no output release: {path}")
+    return output_release
+
+
+def completed_grid_input_releases(experiment_dir: Path, design: Mapping[str, Any]) -> list[str]:
+    """Return baseline and complete preregistered arm releases in design order."""
+    fingerprints = result_fingerprints(experiment_dir)
+    releases = [validated_result_release(experiment_dir / "baseline" / "DONE.json", fingerprints)]
+    releases.extend(
+        validated_result_release(arm_dir(experiment_dir, mixture, seed) / "DONE.json", fingerprints)
+        for mixture, seed in grid_arms(design)
+    )
+    return releases
+
+
+def receipt_environment(args: argparse.Namespace) -> None:
+    """Receipt the frozen environment after uv sync completes."""
+    experiment_dir = Path(args.experiment_dir).resolve()
+    contract = active_run_contract(experiment_dir)
+    if contract is None:
+        raise RuntimeError("Environment receipt requires a sealed run contract")
+    receipt = {
+        "completed_at_utc": utc_now(),
+        "dependency_lock_sha256": contract["dependency_lock_sha256"],
+        "environment_prefix": sys.prefix,
+        "software": software_versions(),
+        "installed_distributions": {
+            str(distribution.metadata["Name"]): distribution.version
+            for distribution in importlib.metadata.distributions()
+            if distribution.metadata["Name"]
+        },
+        **contract_release_fields(
+            experiment_dir,
+            stage="environment",
+            output_identity=str(contract["dependency_lock_sha256"]),
+            input_producer_releases=[f"pace-code-release:{contract['release_receipt_sha256']}"],
+        ),
+        "run_contract_sha256": sha256_file(experiment_dir / CONTRACT_FILENAME),
+        "design_sha256": sha256_file(experiment_dir / DESIGN_FILENAME),
+    }
+    output = experiment_dir / "stage_receipts" / "environment.json"
+    if output.exists():
+        raise RuntimeError(f"Refusing to replace environment receipt: {output}")
+    write_json(output, receipt)
+    print(json.dumps(receipt, indent=2, sort_keys=True))
 
 
 def validate_design(design: Mapping[str, Any]) -> None:
@@ -428,8 +663,10 @@ def create_design(args: argparse.Namespace) -> Path:
     design_path = experiment_dir / DESIGN_FILENAME
     if design_path.exists() and not args.force:
         raise FileExistsError(f"{design_path} exists; pass --force to replace it")
-    if args.force and (experiment_dir / "arms").exists() and any(
-        (experiment_dir / "arms").rglob("DONE.json")
+    if (
+        args.force
+        and (experiment_dir / "arms").exists()
+        and any((experiment_dir / "arms").rglob("DONE.json"))
     ):
         raise RuntimeError(
             "Refusing to replace a design that already has completed arms. Use a new "
@@ -450,7 +687,10 @@ def create_design(args: argparse.Namespace) -> Path:
         "preset": args.preset,
         "title": "Fixed-budget randomized capability-mixture experiment",
         "model": args.model,
+        "model_revision": (PINNED_MODEL_REVISION if args.model == MODEL_DEFAULT else None),
         "datasets": DATASETS,
+        "robustness_datasets": ROBUSTNESS_DATASETS,
+        "dataset_revisions": PINNED_DATASET_REVISIONS,
         "mixtures": sorted(float(v) for v in mixtures),
         "seeds": [int(v) for v in seeds],
         "token_budget": int(token_budget),
@@ -535,8 +775,8 @@ def create_design(args: argparse.Namespace) -> Path:
             "shared by every mixture arm; evaluation tasks are identical across arms."
         ),
         "safety": (
-            "MBPP execution requires explicit opt-in and must be run in a disposable, "
-            "unprivileged, network-disabled container or VM."
+            "MBPP execution requires explicit opt-in plus the verified bubblewrap "
+            "filesystem and network boundary."
         ),
     }
     validate_design(design)
@@ -557,14 +797,11 @@ def import_training_dependencies() -> tuple[Any, ...]:
         from datasets import load_dataset
         from huggingface_hub import HfApi
         from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-        from transformers import (
-            AutoModelForCausalLM,
-            AutoTokenizer,
-            BitsAndBytesConfig,
-            Trainer,
-            TrainingArguments,
-            set_seed,
-        )
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers.trainer import Trainer
+        from transformers.trainer_utils import set_seed
+        from transformers.training_args import TrainingArguments
+        from transformers.utils.quantization_config import BitsAndBytesConfig
     except ImportError as exc:
         raise RuntimeError(
             "Training dependencies are missing. Install: torch transformers datasets "
@@ -658,9 +895,7 @@ def apply_chat_template(
         # reasoning tokens as a capability treatment. Other tokenizers may not
         # accept this keyword, so fall back to their standard chat template.
         try:
-            return tokenizer.apply_chat_template(
-                messages, enable_thinking=False, **kwargs
-            )
+            return tokenizer.apply_chat_template(messages, enable_thinking=False, **kwargs)
         except TypeError:
             return tokenizer.apply_chat_template(messages, **kwargs)
     if response is None:
@@ -698,11 +933,15 @@ def encode_training_example(
         labels = [-100] * min(common, len(full_ids)) + full_ids[min(common, len(full_ids)) :]
     else:
         labels = list(full_ids)
-    return full_ids, labels, {
-        "original_tokens": original_tokens,
-        "retained_tokens": len(full_ids),
-        "truncated": original_tokens > max_length,
-    }
+    return (
+        full_ids,
+        labels,
+        {
+            "original_tokens": original_tokens,
+            "retained_tokens": len(full_ids),
+            "truncated": original_tokens > max_length,
+        },
+    )
 
 
 def canonical_math_train(row: Mapping[str, Any], index: int) -> dict[str, Any] | None:
@@ -755,14 +994,17 @@ def load_hf_dataset(
 
 def prepare_data(args: argparse.Namespace) -> None:
     experiment_dir = Path(args.experiment_dir).resolve()
+    active_run_contract(experiment_dir)
     design = load_design(experiment_dir)
     cache_dir = experiment_dir / "cache"
     marker = cache_dir / PREPARED_MARKER
     if marker.exists() and not args.force:
         log(f"Prepared cache already exists: {marker}")
         return
-    if args.force and (experiment_dir / "arms").exists() and any(
-        (experiment_dir / "arms").rglob("DONE.json")
+    if (
+        args.force
+        and (experiment_dir / "arms").exists()
+        and any((experiment_dir / "arms").rglob("DONE.json"))
     ):
         raise RuntimeError(
             "Refusing to replace locked data after arms have completed. Create a new "
@@ -783,14 +1025,17 @@ def prepare_data(args: argparse.Namespace) -> None:
         _,
     ) = import_training_dependencies()
     api = HfApi()
-    revisions = {
-        name: dataset_revision(api, spec["repo_id"])
-        for name, spec in DATASETS.items()
-    }
-    model_sha = model_revision(api, str(design["model"]))
-    tokenizer = AutoTokenizer.from_pretrained(
-        design["model"], revision=model_sha, use_fast=True
+    configured_revisions = design.get("dataset_revisions")
+    revisions = (
+        {name: str(revision) for name, revision in configured_revisions.items()}
+        if isinstance(configured_revisions, Mapping)
+        else {
+            name: dataset_revision(api, spec["repo_id"])
+            for name, spec in {**DATASETS, **ROBUSTNESS_DATASETS}.items()
+        }
     )
+    model_sha = design.get("model_revision") or model_revision(api, str(design["model"]))
+    tokenizer = AutoTokenizer.from_pretrained(design["model"], revision=model_sha, use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -800,6 +1045,8 @@ def prepare_data(args: argparse.Namespace) -> None:
     code_eval_raw = load_hf_dataset(
         load_dataset, DATASETS["code_eval"], revisions["code_eval"], streaming=False
     )
+    for name, spec in ROBUSTNESS_DATASETS.items():
+        load_hf_dataset(load_dataset, spec, revisions[name], streaming=False)
     math_eval = [
         {
             "record_id": f"gsm8k-{index:05d}",
@@ -840,9 +1087,9 @@ def prepare_data(args: argparse.Namespace) -> None:
         ("code_train", canonical_code_train),
     ):
         spec = DATASETS[name]
-        stream = load_hf_dataset(
-            load_dataset, spec, revisions[name], streaming=True
-        ).shuffle(seed=2026, buffer_size=10_000)
+        stream = load_hf_dataset(load_dataset, spec, revisions[name], streaming=True).shuffle(
+            seed=2026, buffer_size=10_000
+        )
         accepted: list[dict[str, Any]] = []
         accepted_tokens = 0
         rejected_contamination = 0
@@ -908,8 +1155,11 @@ def prepare_data(args: argparse.Namespace) -> None:
         "prepared_at_utc": utc_now(),
         "model": {"repo_id": design["model"], "revision": model_sha},
         "datasets": {
+            name: {**spec, "revision": revisions[name]} for name, spec in DATASETS.items()
+        },
+        "robustness_datasets": {
             name: {**spec, "revision": revisions[name]}
-            for name, spec in DATASETS.items()
+            for name, spec in ROBUSTNESS_DATASETS.items()
         },
         "pool_stats": pool_stats,
         "evaluation": {"math_rows": len(math_eval), "code_rows": len(code_eval)},
@@ -920,9 +1170,30 @@ def prepare_data(args: argparse.Namespace) -> None:
     log(f"Prepared and locked experiment cache: {cache_dir}")
 
 
+def prepare_data_with_rate_limit_retries(
+    args: argparse.Namespace,
+    *,
+    attempts: int = 3,
+    sleep: Any = time.sleep,
+) -> None:
+    """Retry only transient Hub rate limits while preparing pinned inputs."""
+    for attempt in range(1, attempts + 1):
+        try:
+            prepare_data(args)
+            return
+        except Exception as exc:
+            message = str(exc).lower()
+            if attempt == attempts or "429" not in message or "too many requests" not in message:
+                raise
+            delay = 15 * (2 ** (attempt - 1))
+            log(f"Hugging Face rate limit during preparation; retrying in {delay}s")
+            sleep(delay)
+
+
 def warm_model_cache(args: argparse.Namespace) -> None:
     """Download the locked model snapshot once before a GPU array fans out."""
     experiment_dir = Path(args.experiment_dir).resolve()
+    active_run_contract(experiment_dir)
     design = load_design(experiment_dir)
     provenance_path = experiment_dir / PROVENANCE_FILENAME
     if not provenance_path.exists():
@@ -948,11 +1219,12 @@ def warm_model_cache(args: argparse.Namespace) -> None:
         "hf_home": os.environ.get("HF_HOME"),
     }
     write_json(experiment_dir / "MODEL_CACHE_READY.json", marker)
+    write_prepare_stage_receipt(experiment_dir)
     log(f"Model snapshot is ready in the shared cache: {local_path}")
 
 
 def software_versions() -> dict[str, Any]:
-    result = {
+    result: dict[str, Any] = {
         "python": sys.version,
         "platform": platform.platform(),
     }
@@ -970,6 +1242,13 @@ def software_versions() -> dict[str, Any]:
             result[name] = getattr(module, "__version__", "unknown")
         except Exception:
             result[name] = None
+    try:
+        import torch
+
+        result["torch_cuda"] = getattr(getattr(torch, "version", None), "cuda", None)
+    except Exception:
+        result["torch_cuda"] = None
+    result["cuda_home"] = os.environ.get("CUDA_HOME")
     return result
 
 
@@ -1120,9 +1399,7 @@ def build_arm_dataset(
         seed * 10 + 2,
         bool(design["training"]["completion_only_loss"]),
     )
-    tagged = [("math", block) for block in math_blocks] + [
-        ("code", block) for block in code_blocks
-    ]
+    tagged = [("math", block) for block in math_blocks] + [("code", block) for block in code_blocks]
     random.Random(seed * 10 + 3).shuffle(tagged)
     actual = math_blocks_n / total_blocks
     stats = {
@@ -1170,7 +1447,7 @@ def construct_training_arguments(
         "logging_steps": max(1, save_steps // 4),
         "save_strategy": "steps",
         "save_steps": max(1, save_steps),
-        "save_total_limit": 1,
+        "save_total_limit": 2,
         "report_to": [],
         "remove_unused_columns": False,
         "seed": seed,
@@ -1183,6 +1460,22 @@ def construct_training_arguments(
     elif "evaluation_strategy" in signature.parameters:
         kwargs["evaluation_strategy"] = "no"
     return TrainingArguments(**kwargs)
+
+
+def checkpoint_interval(optimizer_steps: int) -> int:
+    """Checkpoint at ten-percent progress increments."""
+    if optimizer_steps < 1:
+        raise ValueError("optimizer_steps must be positive")
+    return max(1, math.ceil(optimizer_steps / 10))
+
+
+def single_gpu_device_map(torch: Any, *, load_in_4bit: bool) -> str | dict[str, int]:
+    """Pin quantized models to the allocated CUDA device."""
+    if not load_in_4bit:
+        return "auto"
+    if not torch.cuda.is_available():
+        raise RuntimeError("4-bit model loading requires an allocated CUDA device")
+    return {"": int(torch.cuda.current_device())}
 
 
 def load_trainable_model(
@@ -1203,15 +1496,17 @@ def load_trainable_model(
         _,
     ) = dependencies
     revision = provenance.get("model", {}).get("revision")
-    tokenizer = AutoTokenizer.from_pretrained(
-        design["model"], revision=revision, use_fast=True
-    )
+    tokenizer = AutoTokenizer.from_pretrained(design["model"], revision=revision, use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     use_bf16 = bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())
     compute_dtype = torch.bfloat16 if use_bf16 else torch.float16
-    model_kwargs: dict[str, Any] = {"revision": revision, "device_map": "auto"}
-    if bool(design["training"]["load_in_4bit"]):
+    load_in_4bit = bool(design["training"]["load_in_4bit"])
+    model_kwargs: dict[str, Any] = {
+        "revision": revision,
+        "device_map": single_gpu_device_map(torch, load_in_4bit=load_in_4bit),
+    }
+    if load_in_4bit:
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -1226,10 +1521,8 @@ def load_trainable_model(
         if "dtype" in model_kwargs:
             model_kwargs["torch_dtype"] = model_kwargs.pop("dtype")
         model = AutoModelForCausalLM.from_pretrained(design["model"], **model_kwargs)
-    if bool(design["training"]["load_in_4bit"]):
-        model = prepare_model_for_kbit_training(
-            model, use_gradient_checkpointing=True
-        )
+    if load_in_4bit:
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
     lora = LoraConfig(
         r=int(design["training"]["lora_rank"]),
         lora_alpha=int(design["training"]["lora_alpha"]),
@@ -1262,15 +1555,17 @@ def load_baseline_model(
         _,
     ) = dependencies
     revision = provenance.get("model", {}).get("revision")
-    tokenizer = AutoTokenizer.from_pretrained(
-        design["model"], revision=revision, use_fast=True
-    )
+    tokenizer = AutoTokenizer.from_pretrained(design["model"], revision=revision, use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     use_bf16 = bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())
     compute_dtype = torch.bfloat16 if use_bf16 else torch.float16
-    model_kwargs: dict[str, Any] = {"revision": revision, "device_map": "auto"}
-    if bool(design["training"]["load_in_4bit"]):
+    load_in_4bit = bool(design["training"]["load_in_4bit"])
+    model_kwargs: dict[str, Any] = {
+        "revision": revision,
+        "device_map": single_gpu_device_map(torch, load_in_4bit=load_in_4bit),
+    }
+    if load_in_4bit:
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -1278,9 +1573,7 @@ def load_baseline_model(
             bnb_4bit_compute_dtype=compute_dtype,
         )
     else:
-        model_kwargs["dtype"] = (
-            compute_dtype if torch.cuda.is_available() else torch.float32
-        )
+        model_kwargs["dtype"] = compute_dtype if torch.cuda.is_available() else torch.float32
     try:
         model = AutoModelForCausalLM.from_pretrained(design["model"], **model_kwargs)
     except TypeError:
@@ -1328,15 +1621,16 @@ def batched_generate(
     for start in range(0, len(prompts), batch_size):
         batch_prompts = prompts[start : start + batch_size]
         rendered = [
-            apply_chat_template(tokenizer, prompt, None, tokenize=False)
-            for prompt in batch_prompts
+            apply_chat_template(tokenizer, prompt, None, tokenize=False) for prompt in batch_prompts
         ]
         encoded = tokenizer(
             rendered,
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=max(128, int(getattr(model.config, "max_position_embeddings", 4096)) - max_new_tokens),
+            max_length=max(
+                128, int(getattr(model.config, "max_position_embeddings", 4096)) - max_new_tokens
+            ),
         )
         encoded = {key: value.to(device) for key, value in encoded.items()}
         with torch.inference_mode():
@@ -1388,42 +1682,103 @@ def validate_generated_code(code: str) -> tuple[bool, str]:
     except SyntaxError as exc:
         return False, f"syntax:{exc.msg}"
     for node in ast.walk(tree):
+        if isinstance(node, ast.arg) and isinstance(node.annotation, ast.Constant) and isinstance(
+            node.annotation.value, str
+        ):
+            return False, "blocked_string_annotation"
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and isinstance(
+            node.returns, ast.Constant
+        ) and isinstance(node.returns.value, str):
+            return False, "blocked_string_annotation"
+        if isinstance(node, ast.AnnAssign) and isinstance(
+            node.annotation, ast.Constant
+        ) and isinstance(node.annotation.value, str):
+            return False, "blocked_string_annotation"
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name.split(".")[0] not in SAFE_IMPORT_ROOTS:
                     return False, f"blocked_import:{alias.name}"
+                if alias.asname and alias.asname.startswith("_"):
+                    return False, f"blocked_private:{alias.asname}"
         elif isinstance(node, ast.ImportFrom):
             root = (node.module or "").split(".")[0]
             if root not in SAFE_IMPORT_ROOTS:
                 return False, f"blocked_import:{node.module}"
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            if node.func.id in BANNED_CALL_NAMES:
-                return False, f"blocked_call:{node.func.id}"
-        elif isinstance(node, ast.Name) and node.id.startswith("__"):
-            return False, f"blocked_dunder:{node.id}"
-        elif isinstance(node, ast.Attribute) and node.attr.startswith("__"):
-            return False, f"blocked_dunder:{node.attr}"
+            for alias in node.names:
+                if (
+                    alias.name.startswith("_")
+                    or alias.name in BANNED_ATTRIBUTE_NAMES
+                    or (alias.asname and alias.asname.startswith("_"))
+                ):
+                    return False, f"blocked_private:{alias.name}"
+        elif isinstance(node, ast.Name) and (
+            node.id.startswith("__")
+            or node.id in BANNED_CALL_NAMES
+            or node.id in BANNED_GLOBAL_NAMES
+        ):
+            return False, f"blocked_name:{node.id}"
+        elif isinstance(node, ast.Attribute) and (
+            node.attr.startswith("_") or node.attr in BANNED_ATTRIBUTE_NAMES
+        ):
+            return False, f"blocked_private:{node.attr}"
+        elif isinstance(node, ast.Constant) and node.value in BANNED_PRIVATE_STRINGS:
+            return False, f"blocked_private_string:{node.value}"
     return True, "ok"
 
 
-def resource_limiter() -> None:
-    """Best-effort POSIX limits for generated-code subprocesses."""
-    try:
-        import resource
+MBPP_SANDBOX_LIMITS: tuple[tuple[str, int], ...] = (
+    ("RLIMIT_CPU", 3),
+    ("RLIMIT_FSIZE", 1_000_000),
+    ("RLIMIT_NOFILE", 32),
+    ("RLIMIT_NPROC", 1),
+    ("RLIMIT_AS", 768_000_000),
+)
+MBPP_SANDBOX_SETUP_PREFIX = "MBPP_SANDBOX_SETUP_ERROR:"
+MBPP_SANDBOX_CANDIDATE_PREFIX = "MBPP_CANDIDATE_ERROR:"
+MBPP_SANDBOX_CANDIDATE_EXIT = 74
+MBPP_SANDBOX_SETUP_EXIT = 75
+MBPP_SANDBOX_RUNNER = """import resource, runpy, sys
+LIMITS = {limits!r}
+script_path, setup_path, pass_path = sys.argv[1:]
+sys.argv = [script_path]
+try:
+    for name, value in LIMITS:
+        limit = getattr(resource, name)
+        resource.setrlimit(limit, (value, value))
+        if resource.getrlimit(limit) != (value, value):
+            raise RuntimeError(f"{{name}}={{resource.getrlimit(limit)!r}}")
+    with open(setup_path, "x", encoding="ascii") as marker:
+        marker.write("ready\\n")
+except BaseException as exc:
+    sys.stderr.write({prefix!r} + repr(exc) + "\\n")
+    raise SystemExit({setup_exit})
+try:
+    runpy.run_path(script_path, run_name="__main__")
+except BaseException as exc:
+    sys.stderr.write({candidate_prefix!r} + repr(exc) + "\\n")
+    raise SystemExit({candidate_exit})
+with open(pass_path, "x", encoding="ascii") as marker:
+    marker.write("pass\\n")
+""".format(
+    limits=MBPP_SANDBOX_LIMITS,
+    prefix=MBPP_SANDBOX_SETUP_PREFIX,
+    setup_exit=MBPP_SANDBOX_SETUP_EXIT,
+    candidate_prefix=MBPP_SANDBOX_CANDIDATE_PREFIX,
+    candidate_exit=MBPP_SANDBOX_CANDIDATE_EXIT,
+)
 
-        resource.setrlimit(resource.RLIMIT_CPU, (3, 3))
-        resource.setrlimit(resource.RLIMIT_FSIZE, (1_000_000, 1_000_000))
-        resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
-        if hasattr(resource, "RLIMIT_NPROC"):
-            resource.setrlimit(resource.RLIMIT_NPROC, (1, 1))
-        if hasattr(resource, "RLIMIT_AS"):
-            resource.setrlimit(resource.RLIMIT_AS, (768_000_000, 768_000_000))
-    except Exception:
-        pass
+
+class MBPPSandboxOperationalError(RuntimeError):
+    """Raised when containment fails before a candidate can execute."""
 
 
 def score_mbpp_candidate(
-    candidate: str, row: Mapping[str, Any], allow_execution: bool
+    candidate: str,
+    row: Mapping[str, Any],
+    allow_execution: bool,
+    code_sandbox: str | None = None,
+    *,
+    operational_failures_raise: bool = False,
 ) -> tuple[bool | None, str]:
     code = extract_code(candidate)
     valid, reason = validate_generated_code(code)
@@ -1431,30 +1786,84 @@ def score_mbpp_candidate(
         return False, reason
     if not allow_execution:
         return None, "execution_disabled"
+    if code_sandbox != "bwrap":
+        raise RuntimeError(
+            "Generated-code execution requires --code-sandbox=bwrap in addition to opt-in"
+        )
+    bwrap_path = require_bwrap()
     imports = "\n".join(str(item) for item in row.get("test_imports", []))
     tests = "\n".join(str(item) for item in row.get("test_list", []))
     harness = f"{imports}\n{code}\n{tests}\n"
     with tempfile.TemporaryDirectory(prefix="mbpp_eval_") as temporary:
         script = Path(temporary) / "candidate.py"
+        marker_token = hashlib.sha256(os.urandom(32)).hexdigest()
+        setup_marker = Path(temporary) / f".{marker_token}.setup"
+        pass_marker = Path(temporary) / f".{marker_token}.pass"
         script.write_text(harness, encoding="utf-8")
+        timed_out = False
+        completed: subprocess.CompletedProcess[str] | None = None
         try:
-            completed = subprocess.run(
-                [sys.executable, "-I", "-S", str(script)],
-                cwd=temporary,
-                env={"PATH": os.environ.get("PATH", "")},
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                timeout=5,
-                check=False,
-                preexec_fn=resource_limiter if os.name == "posix" else None,
-                text=True,
+            command = build_bwrap_command(
+                work_dir=Path(temporary),
+                argv=[
+                    "/usr/bin/python3",
+                    "-I",
+                    "-S",
+                    "-c",
+                    MBPP_SANDBOX_RUNNER,
+                    str(script),
+                    str(setup_marker),
+                    str(pass_marker),
+                ],
+                bwrap_path=bwrap_path,
             )
+            with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stderr_file:
+                completed = subprocess.run(
+                    command,
+                    cwd=temporary,
+                    stdout=subprocess.DEVNULL,
+                    stderr=stderr_file,
+                    timeout=5,
+                    check=False,
+                    text=True,
+                )
+                stderr_file.flush()
+                stderr_file.seek(0, os.SEEK_END)
+                stderr_file.seek(max(0, stderr_file.tell() - 8192))
+                captured_stderr = stderr_file.read()
         except subprocess.TimeoutExpired:
-            return False, "timeout"
-    if completed.returncode == 0:
+            timed_out = True
+            captured_stderr = ""
+        setup_ready = (
+            setup_marker.read_text(encoding="ascii") == "ready\n"
+            if setup_marker.is_file()
+            else False
+        )
+        pass_ready = (
+            pass_marker.read_text(encoding="ascii") == "pass\n"
+            if pass_marker.is_file()
+            else False
+        )
+    if timed_out and setup_ready:
+        return False, "timeout"
+    if (
+        not timed_out
+        and setup_ready
+        and pass_ready
+        and completed is not None
+        and completed.returncode == 0
+    ):
         return True, "pass"
-    error = (completed.stderr or "").strip().splitlines()
-    return False, f"runtime:{error[-1][:160] if error else completed.returncode}"
+    completed_stderr = completed.stderr if completed is not None else None
+    stderr = completed_stderr if isinstance(completed_stderr, str) else captured_stderr
+    if not setup_ready or pass_ready:
+        message = stderr.strip().splitlines()[-1][:160] if stderr.strip() else "unknown"
+        if operational_failures_raise:
+            raise MBPPSandboxOperationalError(message)
+        return False, f"sandbox:{message}"
+    error = stderr.strip().splitlines()
+    return_code = completed.returncode if completed is not None else "unknown"
+    return False, f"runtime:{error[-1][:160] if error else return_code}"
 
 
 def evaluate_model(
@@ -1465,6 +1874,7 @@ def evaluate_model(
     output_dir: Path,
     *,
     allow_code_execution: bool,
+    code_sandbox: str | None,
 ) -> dict[str, Any]:
     generation = design["generation"]
     math_rows = read_jsonl(cache_dir / "eval_math.jsonl")
@@ -1501,7 +1911,9 @@ def evaluate_model(
     )
     code_predictions: list[dict[str, Any]] = []
     for row, output in zip(code_rows, code_outputs):
-        correct, reason = score_mbpp_candidate(output, row, allow_code_execution)
+        correct, reason = score_mbpp_candidate(
+            output, row, allow_code_execution, code_sandbox=code_sandbox
+        )
         code_predictions.append(
             {
                 "record_id": row["record_id"],
@@ -1516,9 +1928,7 @@ def evaluate_model(
     math_accuracy = sum(bool(row["correct"]) for row in math_predictions) / len(math_predictions)
     scored_code = [row for row in code_predictions if row["correct"] is not None]
     code_accuracy = (
-        sum(bool(row["correct"]) for row in scored_code) / len(scored_code)
-        if scored_code
-        else None
+        sum(bool(row["correct"]) for row in scored_code) / len(scored_code) if scored_code else None
     )
     return {
         "math_accuracy": math_accuracy,
@@ -1526,6 +1936,7 @@ def evaluate_model(
         "code_pass_at_1": code_accuracy,
         "code_n": len(scored_code),
         "code_execution_enabled": allow_code_execution,
+        "code_sandbox": code_sandbox,
     }
 
 
@@ -1537,17 +1948,18 @@ def evaluate_baseline(args: argparse.Namespace) -> None:
             "a disposable, network-disabled container/VM with "
             "--allow-generated-code-execution."
         )
+    if args.code_sandbox != "bwrap":
+        raise RuntimeError("Baseline execution requires --code-sandbox=bwrap")
+    require_bwrap()
     experiment_dir = Path(args.experiment_dir).resolve()
+    active_run_contract(experiment_dir, require_prepared_receipt=True)
     design = load_design(experiment_dir)
     if not (experiment_dir / "cache" / PREPARED_MARKER).exists():
         raise FileNotFoundError("Prepared cache missing; run prepare first")
     provenance_path = experiment_dir / PROVENANCE_FILENAME
     output_dir = experiment_dir / "baseline"
     done = output_dir / "DONE.json"
-    fingerprints = {
-        "design_sha256": sha256_file(experiment_dir / DESIGN_FILENAME),
-        "provenance_sha256": sha256_file(provenance_path),
-    }
+    fingerprints = result_fingerprints(experiment_dir)
     if done.exists() and not args.force:
         completed = read_json(done)
         if all(completed.get(key) == value for key, value in fingerprints.items()):
@@ -1572,6 +1984,7 @@ def evaluate_baseline(args: argparse.Namespace) -> None:
         design,
         output_dir,
         allow_code_execution=True,
+        code_sandbox=args.code_sandbox,
     )
     metrics = {
         "kind": "unadapted_baseline",
@@ -1586,6 +1999,7 @@ def evaluate_baseline(args: argparse.Namespace) -> None:
         {
             "completed_at_utc": utc_now(),
             "metrics": "metrics.json",
+            **stage_release_fields(experiment_dir, stage="baseline", output_identity="unadapted"),
             **fingerprints,
         },
     )
@@ -1606,7 +2020,11 @@ def run_arm(args: argparse.Namespace) -> None:
             "MBPP pass@1 is required for the experiment. Re-run inside a disposable, "
             "network-disabled container/VM with --allow-generated-code-execution."
         )
+    if args.code_sandbox != "bwrap":
+        raise RuntimeError("Arm execution requires --code-sandbox=bwrap")
+    require_bwrap()
     experiment_dir = Path(args.experiment_dir).resolve()
+    contract = active_run_contract(experiment_dir, require_prepared_receipt=True)
     design = load_design(experiment_dir)
     mixture = float(args.mixture)
     seed = int(args.seed)
@@ -1619,10 +2037,7 @@ def run_arm(args: argparse.Namespace) -> None:
     output_dir = arm_dir(experiment_dir, mixture, seed)
     done = output_dir / "DONE.json"
     provenance_path = experiment_dir / PROVENANCE_FILENAME
-    fingerprints = {
-        "design_sha256": sha256_file(experiment_dir / DESIGN_FILENAME),
-        "provenance_sha256": sha256_file(provenance_path),
-    }
+    fingerprints = result_fingerprints(experiment_dir)
     if done.exists() and not args.force:
         completed = read_json(done)
         if all(completed.get(key) == value for key, value in fingerprints.items()):
@@ -1633,6 +2048,20 @@ def run_arm(args: argparse.Namespace) -> None:
             "use a new experiment directory"
         )
     output_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_identity = {
+        **fingerprints,
+        "mixture_math": mixture,
+        "seed": seed,
+    }
+    checkpoint_identity_path = output_dir / "trainer" / "CHECKPOINT_CONTRACT.json"
+    checkpoints = sorted((output_dir / "trainer").glob("checkpoint-*"))
+    if checkpoint_identity_path.exists():
+        if read_json(checkpoint_identity_path) != checkpoint_identity:
+            raise RuntimeError("Checkpoint identity does not match this arm execution tuple")
+    elif checkpoints:
+        raise RuntimeError("Existing checkpoints have no sealed checkpoint identity")
+    else:
+        write_json(checkpoint_identity_path, checkpoint_identity)
     dependencies = import_training_dependencies()
     torch = dependencies[0]
     Trainer = dependencies[9]
@@ -1655,7 +2084,7 @@ def run_arm(args: argparse.Namespace) -> None:
         output_dir / "trainer",
         design,
         seed,
-        max(1, optimizer_steps // 2),
+        checkpoint_interval(optimizer_steps),
         bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported()),
         bool(torch.cuda.is_available() and not torch.cuda.is_bf16_supported()),
     )
@@ -1686,6 +2115,7 @@ def run_arm(args: argparse.Namespace) -> None:
         design,
         output_dir,
         allow_code_execution=True,
+        code_sandbox=args.code_sandbox,
     )
     metrics = {
         "mixture_math": mixture,
@@ -1694,6 +2124,8 @@ def run_arm(args: argparse.Namespace) -> None:
         "token_budget": design["token_budget"],
         "optimizer_steps_planned": optimizer_steps,
         "training_runtime_seconds": time.time() - started,
+        "attempt": int(os.environ.get("SLURM_RESTART_COUNT", "0")) + 1,
+        "max_attempts": int(contract["max_attempts"]) if contract else None,
         "train_metrics": json_safe(getattr(train_result, "metrics", {})),
         **fingerprints,
         **evaluation,
@@ -1704,6 +2136,11 @@ def run_arm(args: argparse.Namespace) -> None:
         {
             "completed_at_utc": utc_now(),
             "metrics": "metrics.json",
+            **stage_release_fields(
+                experiment_dir,
+                stage="arm",
+                output_identity=f"z={mixture:.4f}:seed={seed}",
+            ),
             **fingerprints,
         },
     )
@@ -1723,6 +2160,9 @@ def run_grid(args: argparse.Namespace) -> None:
             "run-grid requires --allow-generated-code-execution and should be run in a "
             "disposable, network-disabled container/VM"
         )
+    if args.code_sandbox != "bwrap":
+        raise RuntimeError("Grid execution requires --code-sandbox=bwrap")
+    require_bwrap()
     experiment_dir = Path(args.experiment_dir).resolve()
     design = load_design(experiment_dir)
     script = Path(__file__).resolve()
@@ -1740,6 +2180,8 @@ def run_grid(args: argparse.Namespace) -> None:
                 "--seed",
                 str(seed),
                 "--allow-generated-code-execution",
+                "--code-sandbox",
+                str(args.code_sandbox),
             ]
             if args.force:
                 command.append("--force")
@@ -1763,28 +2205,21 @@ def run_array_arm(args: argparse.Namespace) -> None:
         raw = os.environ.get("SLURM_ARRAY_TASK_ID")
         if raw is None:
             raise ValueError(
-                "Provide --index or launch inside a Slurm array with "
-                "SLURM_ARRAY_TASK_ID set"
+                "Provide --index or launch inside a Slurm array with SLURM_ARRAY_TASK_ID set"
             )
         index = int(raw)
     arms = grid_arms(design)
     if index < 0 or index >= len(arms):
-        raise IndexError(
-            f"Array index {index} is outside [0,{len(arms) - 1}] for this design"
-        )
+        raise IndexError(f"Array index {index} is outside [0,{len(arms) - 1}] for this design")
     mixture, seed = arms[index]
-    log(
-        f"Array index {index}/{len(arms) - 1} maps to "
-        f"z={mixture:.4f}, seed={seed}"
-    )
+    log(f"Array index {index}/{len(arms) - 1} maps to z={mixture:.4f}, seed={seed}")
     run_arm(
         argparse.Namespace(
             experiment_dir=str(experiment_dir),
             mixture=mixture,
             seed=seed,
-            allow_generated_code_execution=bool(
-                args.allow_generated_code_execution
-            ),
+            allow_generated_code_execution=bool(args.allow_generated_code_execution),
+            code_sandbox=args.code_sandbox,
             force=bool(args.force),
         )
     )
@@ -1817,6 +2252,87 @@ def grid_status(args: argparse.Namespace) -> None:
         "pending_arms": pending,
     }
     print(json.dumps(report, indent=2, sort_keys=True))
+
+
+def accept_smoke(args: argparse.Namespace) -> None:
+    """Seal the operational smoke only after all result and sandbox receipts agree."""
+    experiment_dir = Path(args.experiment_dir).resolve()
+    contract = active_run_contract(experiment_dir, require_prepared_receipt=True)
+    if contract is None:
+        raise RuntimeError("Smoke acceptance requires a sealed run contract")
+    design = load_design(experiment_dir)
+    if len(grid_arms(design)) != 3:
+        raise RuntimeError("Smoke acceptance requires exactly three preregistered arms")
+    endpoint_receipt = read_json(
+        experiment_dir / "stage_receipts" / f"endpoint_seed_{int(design['seeds'][0]):04d}.json"
+    )
+    doctor = read_json(Path(args.gpu_doctor_receipt))
+    expected_doctor = {
+        "stage": "gpu-sandbox-doctor",
+        "executor_release": contract["executor_release"],
+        "status": "pass",
+        "cuda_visible": True,
+    }
+    if any(doctor.get(key) != value for key, value in expected_doctor.items()):
+        raise RuntimeError("GPU sandbox doctor receipt does not match the smoke release")
+    for receipt, label in ((endpoint_receipt, "endpoint"), (doctor, "GPU doctor")):
+        if not isinstance(receipt.get("output_release"), str):
+            raise RuntimeError(f"{label} receipt has no output release")
+    output = experiment_dir / "stage_receipts" / "SMOKE_ACCEPTED.json"
+    value = {
+        "completed_at_utc": utc_now(),
+        "operational_gate": "pass",
+        **contract_release_fields(
+            experiment_dir,
+            stage="smoke-acceptance",
+            output_identity="qwen3-8b",
+            input_producer_releases=[
+                str(endpoint_receipt["output_release"]),
+                str(doctor["output_release"]),
+            ],
+        ),
+        **result_fingerprints(experiment_dir),
+    }
+    if output.exists():
+        raise RuntimeError(f"Refusing to replace smoke acceptance receipt: {output}")
+    write_json(output, value)
+    print(json.dumps(value, indent=2, sort_keys=True))
+
+
+def run_sandbox_doctor(args: argparse.Namespace) -> None:
+    """Execute and optionally receipt the generated-code isolation probe."""
+    result = {"checked_at_utc": utc_now(), **sandbox_doctor(cuda=args.cuda)}
+    if args.experiment_dir:
+        experiment_dir = Path(args.experiment_dir).resolve()
+        contract = active_run_contract(experiment_dir)
+        if contract is None:
+            raise RuntimeError("Sandbox receipt requires a sealed run contract")
+        result.update(
+            contract_release_fields(
+                experiment_dir,
+                stage="gpu-sandbox-doctor" if args.cuda else "sandbox-doctor",
+                output_identity="bwrap-cuda" if args.cuda else "bwrap",
+                input_producer_releases=[f"pace-code-release:{contract['release_receipt_sha256']}"],
+            )
+        )
+        result.update(result_fingerprints(experiment_dir))
+    if args.output:
+        write_json(Path(args.output).resolve(), result)
+    print(json.dumps(result, indent=2, sort_keys=True))
+
+
+def create_contract_command(args: argparse.Namespace) -> None:
+    """Create the immutable run contract after design initialization."""
+    path = create_run_contract(
+        experiment_dir=Path(args.experiment_dir),
+        run_id=args.run_id,
+        artifact_root=Path(args.artifact_root),
+        release_receipt_path=Path(args.release_receipt),
+        expected_release=args.expected_release,
+        lock_path=Path(args.lock_path),
+        max_attempts=args.max_attempts,
+    )
+    print(path)
 
 
 def require_numpy() -> Any:
@@ -1919,10 +2435,7 @@ def generalized_threshold_details(
         result["reason"] = "nonpositive_weighted_curvature"
         return result
 
-    numerator = (
-        mu * float(math_fit["a"])
-        - (1.0 - mu) * (float(code_fit["a"]) - code_c)
-    )
+    numerator = mu * float(math_fit["a"]) - (1.0 - mu) * (float(code_fit["a"]) - code_c)
     z_star = numerator / weighted_curvature
     result["z_star_math"] = z_star
     result["z_star_code"] = 1.0 - z_star
@@ -1934,9 +2447,7 @@ def generalized_threshold_details(
     code_slope = quadratic_slope(code_fit, 1.0 - z_star)
     result["math_slope_at_z_star"] = math_slope
     result["code_slope_at_z_star"] = code_slope
-    result["stationarity_residual"] = (
-        mu * math_slope - (1.0 - mu) * code_slope
-    )
+    result["stationarity_residual"] = mu * math_slope - (1.0 - mu) * code_slope
     if not math.isfinite(math_slope) or not math.isfinite(code_slope):
         result["reason"] = "nonfinite_slope_at_stationary_point"
         return result
@@ -1944,9 +2455,7 @@ def generalized_threshold_details(
         result["reason"] = "nonpositive_domain_slope_at_stationary_point"
         return result
 
-    denominator = 2.0 * (
-        mu * math_slope**2 + (1.0 - mu) * code_slope**2
-    )
+    denominator = 2.0 * (mu * math_slope**2 + (1.0 - mu) * code_slope**2)
     if not math.isfinite(denominator) or denominator <= 0.0:
         result["reason"] = "nonpositive_dispersion_denominator"
         return result
@@ -1977,10 +2486,7 @@ def collect_arm_metrics(experiment_dir: Path, design: Mapping[str, Any]) -> list
     provenance_path = experiment_dir / PROVENANCE_FILENAME
     expected = None
     if provenance_path.exists():
-        expected = {
-            "design_sha256": sha256_file(experiment_dir / DESIGN_FILENAME),
-            "provenance_sha256": sha256_file(provenance_path),
-        }
+        expected = result_fingerprints(experiment_dir)
     for mixture in design["mixtures"]:
         for seed in design["seeds"]:
             path = arm_dir(experiment_dir, float(mixture), int(seed)) / "metrics.json"
@@ -1990,7 +2496,9 @@ def collect_arm_metrics(experiment_dir: Path, design: Mapping[str, Any]) -> list
             row = read_json(path)
             if row.get("code_pass_at_1") is None:
                 raise ValueError(f"Code score missing in {path}")
-            if expected is not None and any(row.get(key) != value for key, value in expected.items()):
+            if expected is not None and any(
+                row.get(key) != value for key, value in expected.items()
+            ):
                 raise ValueError(f"Stale or mismatched design/provenance fingerprint in {path}")
             rows.append(row)
     if missing:
@@ -2116,17 +2624,12 @@ def solve_discrete_game(
     equilibrium_welfares = [welfare[i][j] for i, j in equilibria]
     mixed_1, mixed_2, mixed_value = solve_zero_sum_mixed(payoff_1)
     mixed_welfare = sum(
-        float(mixed_1[i]) * float(mixed_2[j]) * welfare[i][j]
-        for i in range(n)
-        for j in range(n)
+        float(mixed_1[i]) * float(mixed_2[j]) * welfare[i][j] for i in range(n) for j in range(n)
     )
     mixed_differentiation = sum(
         float(mixed_1[i])
         * float(mixed_2[j])
-        * abs(
-            float(frontiers[i]["mixture_math"])
-            - float(frontiers[j]["mixture_math"])
-        )
+        * abs(float(frontiers[i]["mixture_math"]) - float(frontiers[j]["mixture_math"]))
         for i in range(n)
         for j in range(n)
     )
@@ -2135,8 +2638,7 @@ def solve_discrete_game(
         "beta": beta,
         "pure_nash_count": len(equilibria),
         "pure_nash_pairs": [
-            [frontiers[i]["mixture_math"], frontiers[j]["mixture_math"]]
-            for i, j in equilibria
+            [frontiers[i]["mixture_math"], frontiers[j]["mixture_math"]] for i, j in equilibria
         ],
         "nash_welfare_min": min(equilibrium_welfares) if equilibrium_welfares else None,
         "nash_welfare_max": max(equilibrium_welfares) if equilibrium_welfares else None,
@@ -2184,18 +2686,10 @@ def prediction_maps(experiment_dir: Path, design: Mapping[str, Any]) -> dict[str
     return maps
 
 
-def paired_binary_difference(
-    first_path: Path, second_path: Path
-) -> dict[str, float | int | None]:
+def paired_binary_difference(first_path: Path, second_path: Path) -> dict[str, float | int | None]:
     np = require_numpy()
-    first = {
-        str(row["record_id"]): float(bool(row["correct"]))
-        for row in read_jsonl(first_path)
-    }
-    second = {
-        str(row["record_id"]): float(bool(row["correct"]))
-        for row in read_jsonl(second_path)
-    }
+    first = {str(row["record_id"]): float(bool(row["correct"])) for row in read_jsonl(first_path)}
+    second = {str(row["record_id"]): float(bool(row["correct"])) for row in read_jsonl(second_path)}
     common = sorted(set(first).intersection(second))
     if not common:
         raise ValueError(f"No common evaluation IDs between {first_path} and {second_path}")
@@ -2222,6 +2716,7 @@ def paired_binary_difference(
 
 def endpoint_preflight_report(args: argparse.Namespace) -> None:
     experiment_dir = Path(args.experiment_dir).resolve()
+    contract = active_run_contract(experiment_dir, require_prepared_receipt=True)
     design = load_design(experiment_dir)
     seeds = [int(value) for value in design["seeds"]]
     seed = int(args.seed) if args.seed is not None else seeds[0]
@@ -2236,9 +2731,7 @@ def endpoint_preflight_report(args: argparse.Namespace) -> None:
         directory = arm_dir(experiment_dir, mixture, seed)
         metrics_path = directory / "metrics.json"
         if not metrics_path.exists():
-            raise FileNotFoundError(
-                f"Missing preflight arm {mixture}, seed {seed}: {metrics_path}"
-            )
+            raise FileNotFoundError(f"Missing preflight arm {mixture}, seed {seed}: {metrics_path}")
         arm_metrics[str(mixture)] = read_json(metrics_path)
     baseline_path = experiment_dir / "baseline" / "metrics.json"
     if not baseline_path.exists():
@@ -2266,7 +2759,9 @@ def endpoint_preflight_report(args: argparse.Namespace) -> None:
             "math_high_share_minus_low_share": math_difference,
             "code_high_own_share_minus_low_own_share": code_difference,
             "both_positive": (
-                math_difference["difference"] > 0.0
+                math_difference["difference"] is not None
+                and code_difference["difference"] is not None
+                and math_difference["difference"] > 0.0
                 and code_difference["difference"] > 0.0
             ),
             "both_at_least_two_item_conditional_se": (
@@ -2281,6 +2776,31 @@ def endpoint_preflight_report(args: argparse.Namespace) -> None:
     }
     output_path = experiment_dir / "preflight" / f"endpoint_preflight_seed_{seed:04d}.json"
     write_json(output_path, report)
+    if contract is not None:
+        fingerprints = result_fingerprints(experiment_dir)
+        input_releases = [
+            validated_result_release(experiment_dir / "baseline" / "DONE.json", fingerprints),
+            *[
+                validated_result_release(
+                    arm_dir(experiment_dir, mixture, seed) / "DONE.json", fingerprints
+                )
+                for mixture in selected
+            ],
+        ]
+        write_json(
+            experiment_dir / "stage_receipts" / f"endpoint_seed_{seed:04d}.json",
+            {
+                "completed_at_utc": utc_now(),
+                "report_sha256": sha256_file(output_path),
+                **contract_release_fields(
+                    experiment_dir,
+                    stage="endpoint-report",
+                    output_identity=f"seed={seed}",
+                    input_producer_releases=input_releases,
+                ),
+                **fingerprints,
+            },
+        )
     print(json.dumps(json_safe(report["endpoint_separation"]), indent=2, sort_keys=True))
     log(f"Endpoint preflight report written to {output_path}")
 
@@ -2313,16 +2833,20 @@ def bootstrap_thresholds(
         rows: list[dict[str, Any]] = []
         for mixture in mixtures:
             for sampled_seed in sampled_seeds:
-                actual = round(mixture * (int(design["token_budget"]) // int(design["max_length"]))) / (
-                    int(design["token_budget"]) // int(design["max_length"])
-                )
+                actual = round(
+                    mixture * (int(design["token_budget"]) // int(design["max_length"]))
+                ) / (int(design["token_budget"]) // int(design["max_length"]))
                 math_map = maps["math"][(mixture, int(sampled_seed))]
                 code_map = maps["code"][(mixture, int(sampled_seed))]
                 rows.append(
                     {
                         "actual_mixture_math": actual,
-                        "math_accuracy": float(np.mean([math_map[item] for item in sampled_ids["math"]])),
-                        "code_pass_at_1": float(np.mean([code_map[item] for item in sampled_ids["code"]])),
+                        "math_accuracy": float(
+                            np.mean([math_map[item] for item in sampled_ids["math"]])
+                        ),
+                        "code_pass_at_1": float(
+                            np.mean([code_map[item] for item in sampled_ids["code"]])
+                        ),
                     }
                 )
         math_fit = fit_quadratic(rows, "math")
@@ -2346,16 +2870,12 @@ def bootstrap_thresholds(
         for beta in design["beta_grid"]:
             game = solve_discrete_game(sampled_frontier, float(beta), mu)
             suffix = format_mixture(float(beta))
-            replicate[f"planner_gain_beta_{suffix}"] = game[
-                "planner_gain_over_homogeneous"
-            ]
+            replicate[f"planner_gain_beta_{suffix}"] = game["planner_gain_over_homogeneous"]
             replicate[f"planner_diff_beta_{suffix}"] = game["planner_differentiation"]
             replicate[f"planner_gain_over_mixed_beta_{suffix}"] = game[
                 "planner_gain_over_mixed_nash"
             ]
-            replicate[f"mixed_diff_beta_{suffix}"] = game[
-                "mixed_nash_expected_differentiation"
-            ]
+            replicate[f"mixed_diff_beta_{suffix}"] = game["mixed_nash_expected_differentiation"]
             replicate[f"pure_nash_count_beta_{suffix}"] = game["pure_nash_count"]
         output.append(replicate)
     return output
@@ -2422,19 +2942,13 @@ def seed_sensitivity_rows(
         for omitted_seed in seeds:
             subset = [row for row in rows if int(row["seed"]) != omitted_seed]
             output.append(
-                fitted_threshold_record(
-                    subset, mu, "leave_one_seed_out", omitted_seed=omitted_seed
-                )
+                fitted_threshold_record(subset, mu, "leave_one_seed_out", omitted_seed=omitted_seed)
             )
     return output
 
 
 def finite_range(values: Sequence[float | None]) -> dict[str, float] | None:
-    finite = [
-        float(value)
-        for value in values
-        if value is not None and math.isfinite(float(value))
-    ]
+    finite = [float(value) for value in values if value is not None and math.isfinite(float(value))]
     if not finite:
         return None
     return {"min": min(finite), "max": max(finite)}
@@ -2452,9 +2966,7 @@ def summarize_seed_sensitivity(rows: Sequence[Mapping[str, Any]]) -> dict[str, A
         "single_seed_identified_count": sum(
             bool(row["general_threshold_identified"]) for row in single
         ),
-        "single_seed_beta_e_range": finite_range(
-            [row["beta_e_general"] for row in single]
-        ),
+        "single_seed_beta_e_range": finite_range([row["beta_e_general"] for row in single]),
         "leave_one_seed_out_beta_e_range": finite_range(
             [row["beta_e_general"] for row in leave_one_out]
         ),
@@ -2518,9 +3030,7 @@ def load_router_audit(path: Path) -> tuple[Any, Any]:
 
 def logistic_mle(x: Any, y: Any, include_intercept: bool) -> dict[str, Any]:
     np = require_numpy()
-    design = (
-        np.column_stack([np.ones_like(x), x]) if include_intercept else x.reshape(-1, 1)
-    )
+    design = np.column_stack([np.ones_like(x), x]) if include_intercept else x.reshape(-1, 1)
     coefficients = np.zeros(design.shape[1], dtype=float)
     converged = False
     ridge = 1e-8
@@ -2633,7 +3143,9 @@ def make_analysis_plot(
     fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.0))
     axes[0].plot(mixtures, math_q, "o-", label="GSM8K")
     axes[0].plot(mixtures, code_q, "s-", label="MBPP")
-    axes[0].set(xlabel="Math training share z", ylabel="Held-out accuracy", title="Capability frontier")
+    axes[0].set(
+        xlabel="Math training share z", ylabel="Held-out accuracy", title="Capability frontier"
+    )
     axes[0].legend(frameon=False)
     betas = [row["beta"] for row in games]
     gains = [row["planner_gain_over_homogeneous"] for row in games]
@@ -2660,6 +3172,7 @@ def make_analysis_plot(
 
 def analyze_experiment(args: argparse.Namespace) -> None:
     experiment_dir = Path(args.experiment_dir).resolve()
+    contract = active_run_contract(experiment_dir, require_prepared_receipt=True)
     design = load_design(experiment_dir)
     rows = collect_arm_metrics(experiment_dir, design)
     analysis_dir = experiment_dir / "analysis"
@@ -2669,14 +3182,8 @@ def analyze_experiment(args: argparse.Namespace) -> None:
     baseline: dict[str, Any] | None = None
     if baseline_path.exists():
         baseline = read_json(baseline_path)
-        expected_fingerprints = {
-            "design_sha256": sha256_file(experiment_dir / DESIGN_FILENAME),
-            "provenance_sha256": sha256_file(experiment_dir / PROVENANCE_FILENAME),
-        }
-        if any(
-            baseline.get(key) != value
-            for key, value in expected_fingerprints.items()
-        ):
+        expected_fingerprints = result_fingerprints(experiment_dir)
+        if any(baseline.get(key) != value for key, value in expected_fingerprints.items()):
             raise ValueError(f"Stale or mismatched baseline fingerprint in {baseline_path}")
         write_csv(analysis_dir / "baseline_metrics.csv", [baseline])
     else:
@@ -2684,18 +3191,14 @@ def analyze_experiment(args: argparse.Namespace) -> None:
     math_fit = fit_quadratic(rows, "math")
     code_fit = fit_quadratic(rows, "code")
     pooled_fit = fit_pooled_quadratic(rows)
-    generalized = generalized_threshold_details(
-        math_fit, code_fit, float(design["task_mass_math"])
-    )
+    generalized = generalized_threshold_details(math_fit, code_fit, float(design["task_mass_math"]))
     beta_general = generalized["beta_e"]
     beta_symmetric = symmetric_beta_threshold(pooled_fit)
     seed_sensitivity = seed_sensitivity_rows(rows, design)
     frontier = mean_frontier_rows(rows)
     baseline_comparison = None
     if baseline is not None:
-        balanced = min(
-            frontier, key=lambda row: abs(float(row["mixture_math"]) - 0.5)
-        )
+        balanced = min(frontier, key=lambda row: abs(float(row["mixture_math"]) - 0.5))
         baseline_math = float(baseline["math_accuracy"])
         baseline_code = float(baseline["code_pass_at_1"])
         baseline_comparison = {
@@ -2716,9 +3219,7 @@ def analyze_experiment(args: argparse.Namespace) -> None:
             ),
         }
     games = [
-        solve_discrete_game(
-            frontier, float(beta), float(design["task_mass_math"])
-        )
+        solve_discrete_game(frontier, float(beta), float(design["task_mass_math"]))
         for beta in design["beta_grid"]
     ]
     reps = int(args.bootstrap_reps or design["bootstrap_reps"])
@@ -2777,8 +3278,7 @@ def analyze_experiment(args: argparse.Namespace) -> None:
             ),
             "generalized_bootstrap_total_replicates": len(bootstrap),
             "generalized_bootstrap_identification_rate": (
-                sum(bool(row["general_threshold_identified"]) for row in bootstrap)
-                / len(bootstrap)
+                sum(bool(row["general_threshold_identified"]) for row in bootstrap) / len(bootstrap)
                 if bootstrap
                 else None
             ),
@@ -2809,14 +3309,11 @@ def analyze_experiment(args: argparse.Namespace) -> None:
             "code_slope_at_z_star": percentile_interval(
                 [row["code_slope_z_star"] for row in bootstrap]
             ),
-            "z_star_math": percentile_interval(
-                [row["z_star_math"] for row in bootstrap]
-            ),
+            "z_star_math": percentile_interval([row["z_star_math"] for row in bootstrap]),
         },
         "assumption_checks": {
             "stationary_point_interior": (
-                generalized["z_star_math"] is not None
-                and 0.0 < generalized["z_star_math"] < 1.0
+                generalized["z_star_math"] is not None and 0.0 < generalized["z_star_math"] < 1.0
             ),
             "math_increasing_at_z_star": (
                 generalized["math_slope_at_z_star"] is not None
@@ -2841,6 +3338,25 @@ def analyze_experiment(args: argparse.Namespace) -> None:
         "interpretation_limit": design["estimands"]["interpretation"],
     }
     write_json(analysis_dir / "analysis_summary.json", summary)
+    release_fields = (
+        contract_release_fields(
+            experiment_dir,
+            stage="analysis",
+            output_identity="confirmatory",
+            input_producer_releases=completed_grid_input_releases(experiment_dir, design),
+        )
+        if contract is not None
+        else {}
+    )
+    write_json(
+        analysis_dir / "DONE.json",
+        {
+            "completed_at_utc": utc_now(),
+            "analysis_summary_sha256": sha256_file(analysis_dir / "analysis_summary.json"),
+            **release_fields,
+            **result_fingerprints(experiment_dir),
+        },
+    )
     log(f"Analysis written to {analysis_dir}")
     if beta_general is None:
         log("beta_E is not identified because fitted monotonicity/concavity conditions fail")
@@ -2929,8 +3445,12 @@ def self_test() -> None:
     assert abs(math_fit["a"] - a) < 1e-10
     assert abs(code_fit["c"] - c) < 1e-10
     expected = c / (2.0 * (a - 0.5 * c) ** 2)
-    assert abs(generalized_beta_threshold(math_fit, code_fit, 0.5) - expected) < 1e-10
-    assert abs(symmetric_beta_threshold(pooled) - expected) < 1e-10
+    generalized_value = generalized_beta_threshold(math_fit, code_fit, 0.5)
+    symmetric_value = symmetric_beta_threshold(pooled)
+    assert generalized_value is not None
+    assert symmetric_value is not None
+    assert abs(generalized_value - expected) < 1e-10
+    assert abs(symmetric_value - expected) < 1e-10
     asymmetric_math = {"a": 0.9, "c": 0.4}
     asymmetric_code = {"a": 0.7, "c": 0.2}
     asymmetric = generalized_threshold_details(asymmetric_math, asymmetric_code, 0.5)
@@ -2939,9 +3459,7 @@ def self_test() -> None:
     assert abs(asymmetric["stationarity_residual"]) < 1e-10
     expected_asymmetric = 0.3 / (2.0 * (19.0 / 30.0) ** 2)
     assert abs(asymmetric["beta_e"] - expected_asymmetric) < 1e-10
-    boundary = generalized_threshold_details(
-        {"a": 1.0, "c": 0.1}, {"a": 0.1, "c": 0.1}, 0.5
-    )
+    boundary = generalized_threshold_details({"a": 1.0, "c": 0.1}, {"a": 0.1, "c": 0.1}, 0.5)
     assert not boundary["identified"]
     assert boundary["reason"] == "stationary_point_not_interior"
     audit_rng = np.random.default_rng(4)
@@ -3027,27 +3545,19 @@ def self_test() -> None:
                 )
         miniature_rows = collect_arm_metrics(experiment, miniature_design)
         assert len(miniature_rows) == 15
-        miniature_bootstrap = bootstrap_thresholds(
-            experiment, miniature_design, reps=5, seed=7
-        )
+        miniature_bootstrap = bootstrap_thresholds(experiment, miniature_design, reps=5, seed=7)
         assert len(miniature_bootstrap) == 5
         assert "planner_gain_beta_4p0000" in miniature_bootstrap[0]
         analyze_experiment(
-            argparse.Namespace(
-                experiment_dir=str(experiment), bootstrap_reps=5, router_audit=None
-            )
+            argparse.Namespace(experiment_dir=str(experiment), bootstrap_reps=5, router_audit=None)
         )
         assert (experiment / "analysis" / "analysis_summary.json").exists()
-        miniature_summary = read_json(
-            experiment / "analysis" / "analysis_summary.json"
-        )
+        miniature_summary = read_json(experiment / "analysis" / "analysis_summary.json")
         assert miniature_summary["baseline_comparison"] is not None
         assert "generalized_threshold_anchor" in miniature_summary
         assert "seed_sensitivity" in miniature_summary
         assert (experiment / "analysis" / "seed_sensitivity.csv").exists()
-        endpoint_preflight_report(
-            argparse.Namespace(experiment_dir=str(experiment), seed=11)
-        )
+        endpoint_preflight_report(argparse.Namespace(experiment_dir=str(experiment), seed=11))
         assert (experiment / "preflight" / "endpoint_preflight_seed_0011.json").exists()
     print("All offline experiment tests passed.")
 
@@ -3107,6 +3617,11 @@ def build_parser() -> argparse.ArgumentParser:
     prepare = sub.add_parser("prepare", help="lock revisions and cache decontaminated data")
     prepare.add_argument("--experiment-dir", required=True)
     prepare.add_argument("--force", action="store_true")
+    prepare.add_argument(
+        "--skip-python-finalization",
+        action="store_true",
+        help="exit immediately after successful atomic writes on affected ICE workers",
+    )
 
     warm = sub.add_parser(
         "warm-cache",
@@ -3120,6 +3635,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     baseline.add_argument("--experiment-dir", required=True)
     baseline.add_argument("--allow-generated-code-execution", action="store_true")
+    baseline.add_argument("--code-sandbox", choices=["bwrap"])
     baseline.add_argument("--force", action="store_true")
 
     arm = sub.add_parser("run-arm", help="train and evaluate one preregistered arm")
@@ -3127,11 +3643,13 @@ def build_parser() -> argparse.ArgumentParser:
     arm.add_argument("--mixture", type=float, required=True)
     arm.add_argument("--seed", type=int, required=True)
     arm.add_argument("--allow-generated-code-execution", action="store_true")
+    arm.add_argument("--code-sandbox", choices=["bwrap"])
     arm.add_argument("--force", action="store_true")
 
     grid = sub.add_parser("run-grid", help="run all incomplete arms in isolated processes")
     grid.add_argument("--experiment-dir", required=True)
     grid.add_argument("--allow-generated-code-execution", action="store_true")
+    grid.add_argument("--code-sandbox", choices=["bwrap"])
     grid.add_argument("--keep-going", action="store_true")
     grid.add_argument("--force", action="store_true")
 
@@ -3142,10 +3660,37 @@ def build_parser() -> argparse.ArgumentParser:
     array_arm.add_argument("--experiment-dir", required=True)
     array_arm.add_argument("--index", type=int)
     array_arm.add_argument("--allow-generated-code-execution", action="store_true")
+    array_arm.add_argument("--code-sandbox", choices=["bwrap"])
     array_arm.add_argument("--force", action="store_true")
 
     status = sub.add_parser("grid-status", help="report completed and pending array arms")
     status.add_argument("--experiment-dir", required=True)
+    status.add_argument("--json", action="store_true", help="emit JSON (the stable default)")
+
+    sandbox = sub.add_parser(
+        "sandbox-doctor", help="prove bubblewrap filesystem and network isolation"
+    )
+    sandbox.add_argument("--output", help="optional JSON receipt path")
+    sandbox.add_argument("--cuda", action="store_true", help="also prove GPU device visibility")
+    sandbox.add_argument("--experiment-dir", help="sealed experiment for receipt provenance")
+
+    contract = sub.add_parser(
+        "create-run-contract", help="seal design, release, dependencies, and storage"
+    )
+    contract.add_argument("--experiment-dir", required=True)
+    contract.add_argument("--run-id", required=True)
+    contract.add_argument("--artifact-root", required=True)
+    contract.add_argument("--release-receipt", required=True)
+    contract.add_argument("--expected-release", required=True)
+    contract.add_argument("--lock-path", required=True)
+    contract.add_argument("--max-attempts", type=int, default=3)
+
+    environment = sub.add_parser("receipt-environment", help="receipt the frozen uv environment")
+    environment.add_argument("--experiment-dir", required=True)
+
+    smoke = sub.add_parser("accept-smoke", help="seal the same-model operational smoke gate")
+    smoke.add_argument("--experiment-dir", required=True)
+    smoke.add_argument("--gpu-doctor-receipt", required=True)
 
     analyze = sub.add_parser("analyze", help="fit frontiers and solve the routing game")
     analyze.add_argument("--experiment-dir", required=True)
@@ -3183,7 +3728,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "init":
             create_design(args)
         elif args.command == "prepare":
-            prepare_data(args)
+            prepare_data_with_rate_limit_retries(args)
+            if args.skip_python_finalization:
+                sys.stdout.flush()
+                sys.stderr.flush()
+                os._exit(0)
         elif args.command == "warm-cache":
             warm_model_cache(args)
         elif args.command == "evaluate-baseline":
@@ -3196,6 +3745,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_array_arm(args)
         elif args.command == "grid-status":
             grid_status(args)
+        elif args.command == "sandbox-doctor":
+            run_sandbox_doctor(args)
+        elif args.command == "create-run-contract":
+            create_contract_command(args)
+        elif args.command == "receipt-environment":
+            receipt_environment(args)
+        elif args.command == "accept-smoke":
+            accept_smoke(args)
         elif args.command == "analyze":
             analyze_experiment(args)
         elif args.command == "endpoint-report":

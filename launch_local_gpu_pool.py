@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="required for MBPP; use only in an isolated disposable environment",
     )
+    parser.add_argument("--code-sandbox", choices=["bwrap"], required=True)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--keep-going", action="store_true")
     parser.add_argument(
@@ -53,6 +54,8 @@ def main() -> int:
             "Refusing to execute generated MBPP code. Re-run in an isolated, "
             "network-disabled environment with --allow-generated-code-execution."
         )
+    if args.code_sandbox != "bwrap":
+        raise SystemExit("Generated-code execution requires --code-sandbox=bwrap")
     root = Path(__file__).resolve().parent
     experiment_script = root / "capability_mixture_experiment.py"
     experiment_dir = Path(args.experiment_dir).resolve()
@@ -128,6 +131,8 @@ def main() -> int:
                     "--experiment-dir",
                     str(experiment_dir),
                     "--allow-generated-code-execution",
+                    "--code-sandbox",
+                    args.code_sandbox,
                 ]
             else:
                 command = [
@@ -139,6 +144,8 @@ def main() -> int:
                     "--index",
                     str(job["index"]),
                     "--allow-generated-code-execution",
+                    "--code-sandbox",
+                    args.code_sandbox,
                 ]
             if args.force:
                 command.append("--force")

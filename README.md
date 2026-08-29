@@ -7,6 +7,26 @@ math/code data allocations, measures each adapter's two-domain capabilities,
 then compares the provider equilibrium with the quality-maximizing pair under
 the same softmax router.
 
+## PACE ICE confirmatory run
+
+The frozen ICE workflow runs the complete 45-arm confirmatory design, one
+untouched baseline, and four robustness profiles. It deploys an exact Git SHA,
+builds the locked environment on a CPU node, prepares same-model smoke and full
+designs concurrently, proves bubblewrap containment on an allocated GPU, and
+then fans the full grid out to 46 GPUs at most.
+
+```bash
+export RELEASE_SHA=<full-pushed-40-character-sha>
+export MAX_PARALLEL=45
+bash slurm/submit_ice_confirmatory.sh
+```
+
+The submitter uses `coe-ice`, requests no account or partition, keeps persistent
+artifacts under `/storage/ice-shared/cs7634/staff/econml`, and writes a submission
+receipt before the chain runs. Run it only from the exact remote release named
+by `pace-code-release`; it refuses a dirty or mismatched deployment, reduced
+grid, or duplicate run directory.
+
 ## Default overnight experiment
 
 The default is sized for an approximately 12-hour overnight run on four strong
@@ -106,22 +126,19 @@ export ALLOW_CODE_EXECUTION=1
 bash run_six_hour_local.sh
 ```
 
-The local launcher now schedules the unadapted baseline automatically. On
-Slurm, `submit_pipeline.sh` submits an independent baseline job alongside the
-GPU array and waits for both before analysis. Runtime depends heavily on GPU,
-storage, and generation speed; run the smoke preset first rather than assuming
-the target will hold on an unfamiliar cluster.
+The local launcher schedules the unadapted baseline automatically. The sealed
+ICE chain submits the baseline beside the GPU arrays and waits for every receipt
+before analysis. Runtime depends heavily on GPU, storage, and generation speed;
+use the same-model smoke receipt rather than assuming a target from another
+cluster.
 
 ## Installation
 
-Python 3.10 or newer is recommended.
+The PACE release is locked for Python 3.10 and CUDA-capable Linux nodes.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements-gpu.txt
-python capability_mixture_experiment.py self-test
+uv sync --frozen --extra robustness
+uv run python capability_mixture_experiment.py self-test
 ```
 
 Set a shared Hugging Face cache on clusters:
@@ -148,10 +165,12 @@ python capability_mixture_experiment.py prepare --experiment-dir experiments/smo
 python capability_mixture_experiment.py warm-cache --experiment-dir experiments/smoke
 python capability_mixture_experiment.py evaluate-baseline \
   --experiment-dir experiments/smoke \
-  --allow-generated-code-execution
+  --allow-generated-code-execution \
+  --code-sandbox bwrap
 python capability_mixture_experiment.py run-grid \
   --experiment-dir experiments/smoke \
-  --allow-generated-code-execution
+  --allow-generated-code-execution \
+  --code-sandbox bwrap
 python capability_mixture_experiment.py analyze --experiment-dir experiments/smoke
 ```
 
@@ -176,7 +195,8 @@ On a multi-GPU workstation, fill GPUs 0--7 with the pending arms:
 python launch_local_gpu_pool.py \
   --experiment-dir experiments/qwen3_8b_pilot \
   --gpus 0,1,2,3,4,5,6,7 \
-  --allow-generated-code-execution
+  --allow-generated-code-execution \
+  --code-sandbox bwrap
 python capability_mixture_experiment.py analyze \
   --experiment-dir experiments/qwen3_8b_pilot
 ```
@@ -200,25 +220,28 @@ For `--eval-math-n` and `--eval-code-n`, a value of `0` means the entire locked
 test split. The confirmatory preset therefore uses all 1,319 GSM8K and all 257
 sanitized MBPP test items.
 
-Then submit preparation, the dependent GPU array, and final analysis:
+Deploy the pushed exact SHA and submit the complete dependency chain:
 
 ```bash
-export EXPERIMENT_DIR=/shared/$USER/routing_qwen3_8b_confirmatory
-export ARTIFACT_DIR=$PWD
-export VENV_ACTIVATE=$PWD/.venv/bin/activate
-export MAX_PARALLEL=45
-export ALLOW_CODE_EXECUTION=1
-bash slurm/submit_pipeline.sh
+~/dotfiles/scripts/pace-code-release \
+  --host pace-ice-agent \
+  --repo-url https://github.com/Evan-eng/econml_model_routing \
+  --revision "$RELEASE_SHA" \
+  --release-root /storage/ice-shared/cs7634/staff/econml/releases/econml_model_routing \
+  --tracked-identity uv.lock \
+  --tracked-identity pyproject.toml \
+  --tracked-identity slurm
+ssh pace-ice-agent \
+  "RELEASE_SHA=$RELEASE_SHA MAX_PARALLEL=45 bash /storage/ice-shared/cs7634/staff/econml/releases/econml_model_routing/$RELEASE_SHA/slurm/submit_ice_confirmatory.sh"
 ```
 
-Edit the `#SBATCH` resource lines for the local cluster. The defaults request
-one GPU, eight CPUs, 64 GB host memory, and 12 hours per arm. If only eight GPUs
-are available, set `MAX_PARALLEL=8`; Slurm will run the 45 arms in six waves.
+The sealed ICE submitter is the only supported Slurm path for the confirmatory
+run; local launchers remain available for workstation development.
 
-`ALLOW_CODE_EXECUTION=1` is an explicit acknowledgement, not a sandbox. The
-evaluator applies static restrictions, isolated Python mode, timeouts, and
-resource limits, but generated code must still run inside a disposable,
-unprivileged, network-disabled security boundary.
+`ALLOW_CODE_EXECUTION=1` is only the human opt-in. The evaluator also requires
+`--code-sandbox=bwrap`; it fails closed unless bubblewrap provides the
+network-disabled, read-only host boundary, and retains static restrictions,
+isolated Python mode, timeouts, and resource limits inside that boundary.
 
 Check progress or safely resubmit failed array indices:
 
@@ -266,15 +289,14 @@ leaderboard capability. Inspect these diagnostics before changing `max_length`.
 ## Optional harder-benchmark check
 
 The default overnight run deliberately prioritizes training-seed replication
-over expensive additional generation. If time remains, install the standardized
-benchmark layer and evaluate the baseline plus the endpoint and balanced
-adapters from seed 11:
+over expensive additional generation. The locked `robustness` extra supplies
+the standardized layer for the baseline plus endpoint and balanced adapters:
 
 ```bash
-python -m pip install -r requirements-benchmarks.txt
-python run_benchmark_robustness.py \
+uv run python run_benchmark_robustness.py \
   --experiment-dir experiments/qwen3_8b_overnight \
-  --allow-generated-code-execution
+  --allow-generated-code-execution \
+  --code-sandbox bwrap
 ```
 
 This uses lm-eval's `hendrycks_math500` and `humaneval_instruct` tasks and
