@@ -1326,3 +1326,25 @@ compact-manifest SHA-256 of
 `8cf8109607a4c099fb34f749f5df49e8f44bab23fd8606fb1e9329c499080b2c`.
 This entry supersedes only the compact-copy count and compact-manifest digest
 reported in the preceding entry; the accepted ICE manifest is unchanged.
+
+[2026-08-28 20:29 EDT] AUTHORITY artifact-publication-completion
+
+repo_publish: allowed on topic branch `glenn/ice-confirmatory-24h` for every
+accepted experiment artifact, including trained adapters, retained
+checkpoints, raw predictions, receipts, ledgers, analyses, and archive
+manifests; default/protected branches remain prohibited.
+
+cluster_read_and_copy: allowed for receipt-bound inventory and off-cluster
+transfer from the accepted run and its named robustness/correction descendants;
+no new compute or job mutation is authorized or required.
+
+artifact_storage: Git LFS is authorized for large or binary artifacts. Preserve
+exact bytes and checksums, exclude credentials, caches, disposable staging,
+third-party base-model downloads, and byte-identical duplicate working copies.
+
+decisions_consumed: the owner explicitly requested that all accepted artifacts,
+including weights and LoRAs, be committed and pushed to the project repository.
+
+morning_list_only: protected-branch operations, force pushes, history rewrites,
+repository administration, secrets, or publication of third-party cached model
+weights whose pinned upstream revision is already reproducible.

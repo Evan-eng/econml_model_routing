@@ -1,7 +1,11 @@
 .venv/
+.DS_Store
 __pycache__/
 .pytest_cache/
 .ruff_cache/
 .pyright/
 *.pyc
-artifacts/accepted/
+artifacts/accepted/*
+!artifacts/accepted/README.md
+!artifacts/accepted/ARCHIVES.sha256
+!artifacts/accepted/accepted-*.zip
