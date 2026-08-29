@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "published_at": "2026-08-28T21:35:28-04:00",
+  "origin": "https://github.com/Evan-eng/econml_model_routing",
+  "branch": "glenn/ice-confirmatory-24h",
+  "artifact_commit_sha": "89fe55d2cf1fbf1070d5847fb360fd4a9023bc6d",
+  "source_run_id": "qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c",
+  "source_run_file_count": 2101,
+  "source_run_logical_bytes": 57247182883,
+  "source_artifact_manifest_sha256": "71e80fb84069b5d3940e7553f761404c2491273506b8e09559751c1b2c1d84ac",
+  "accepted_full_export_sha256": "c272f14c672050db2ffa3b5caee2146cfe288064634fec366df04636be7f33bb",
+  "accepted_paper_packet_sha256": "330941d128e9e75ed03f78ec5863c1ddd1c13fcd2ef5affd8d1174f48fb58b33",
+  "git_lfs": {
+    "unique_object_count": 683,
+    "unique_object_bytes": 47300520385,
+    "push_completed": true,
+    "authenticated_batch_presence_verified": true
+  },
+  "fresh_clone_verification": {
+    "clone_sha": "89fe55d2cf1fbf1070d5847fb360fd4a9023bc6d",
+    "downloaded_and_verified": [
+      "artifacts/ice-run/qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c/arms/z_0p0000/seed_0011/adapter/adapter_model.safetensors",
+      "artifacts/ice-run/qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c/arms/z_0p0000/seed_0011/trainer/checkpoint-128/optimizer.pt",
+      "artifacts/ice-run/qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c/arms/z_0p0000/seed_0011/DONE.json",
+      "artifacts/accepted/accepted-full-export-qwen3-8b-confirmatory-20260828.zip"
+    ]
+  },
+  "scope": {
+    "experiment_produced_weights_and_state_included": true,
+    "public_upstream_base_model_duplicated": false,
+    "base_model_identity_pinned_by_run_contract": true,
+    "byte_identical_local_working_copies_duplicated": false
+  }
+}

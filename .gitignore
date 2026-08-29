@@ -8,4 +8,5 @@ __pycache__/
 artifacts/accepted/*
 !artifacts/accepted/README.md
 !artifacts/accepted/ARCHIVES.sha256
+!artifacts/accepted/GITHUB_PUBLICATION_RECEIPT.json
 !artifacts/accepted/accepted-*.zip

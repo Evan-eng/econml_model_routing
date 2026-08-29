@@ -1348,3 +1348,31 @@ including weights and LoRAs, be committed and pushed to the project repository.
 morning_list_only: protected-branch operations, force pushes, history rewrites,
 repository administration, secrets, or publication of third-party cached model
 weights whose pinned upstream revision is already reproducible.
+
+[2026-08-28 21:35 EDT] Complete artifact tree published to GitHub
+
+Observation: Topic-branch commit
+`89fe55d2cf1fbf1070d5847fb360fd4a9023bc6d` publishes all 2,101 files and
+57,247,182,883 logical bytes from accepted source run
+`qwen3-8b-confirmatory-20260828T165149Z-c3cb569cf51c`, including all 45
+final LoRA adapters and both retained checkpoints, optimizer state, scheduler
+state, RNG state, tokenizer/configuration files, predictions, metrics,
+receipts, status history, cache inputs, and analyses. It also publishes the
+complete accepted export ZIP and paper-packet ZIP.
+
+Observation: The guarded topic push uploaded 683 unique Git LFS objects,
+47,300,520,385 bytes after content-addressed deduplication, and advanced the
+remote branch to the exact artifact commit. An authenticated Git LFS batch
+query returned valid download actions for all 683 object IDs. A fresh clone at
+the exact commit downloaded and SHA-256-verified a final adapter, a retained
+checkpoint optimizer state, a DONE receipt, and the full accepted-export ZIP.
+
+Observation: The source artifact manifest has SHA-256
+`71e80fb84069b5d3940e7553f761404c2491273506b8e09559751c1b2c1d84ac`.
+No secret-like file matched the publication scan. The public upstream Qwen3-8B
+base-model cache is not duplicated; its exact model identity and revision
+remain pinned by the run contract and provenance receipt.
+
+Inference: The GitHub topic branch now contains every unique
+experiment-produced artifact required to inspect results, rerun evaluation,
+load any final adapter, or resume either retained checkpoint for any arm.

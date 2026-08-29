@@ -26,6 +26,9 @@ analysis outputs. Its `SOURCE_ARTIFACT_MANIFEST.json` has SHA-256
 - `ARCHIVES.sha256` records both archive digests. The complete export's internal
   `MANIFEST.json` has SHA-256
   `f31232b36ef4f70000e0614a966138a9b095722854bcac454022fa7ca8519e26`.
+- `GITHUB_PUBLICATION_RECEIPT.json` binds the exact artifact commit, source
+  manifest, LFS object count and bytes, remote-presence audit, and fresh-clone
+  checksum verification.
 
 The unpacked local export, its duplicate working copy, and the compact staging
 bundle remain ignored because their distinct contents are already present in
