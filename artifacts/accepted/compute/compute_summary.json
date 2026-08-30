@@ -1,0 +1,39 @@
+{
+  "hardware": {
+    "cluster": "institutional Slurm cluster",
+    "gpu_allocation": "one NVIDIA HX00 GPU per independent GPU task",
+    "primary_gpu": "NVIDIA H100",
+    "robustness_gpu": "NVIDIA H100 or H200",
+    "cpus_per_gpu_task": 8,
+    "host_memory_gib_per_gpu_task": 224,
+    "node_local_scratch_gib": 50,
+    "maximum_attempt_time": "15:30:00"
+  },
+  "recorded_successful_scientific_workloads": {
+    "primary_adapter_tasks": {
+      "tasks": 45,
+      "total_seconds": 339034.39775395393,
+      "total_gpu_hours": 94.17622159832054,
+      "minimum_seconds": 5954.496924877167,
+      "median_seconds": 6991.19868350029,
+      "maximum_seconds": 15659.897040605545
+    },
+    "unadapted_baseline_task": {
+      "tasks": 1,
+      "total_seconds": 3637.070419073105,
+      "total_gpu_hours": 1.010297338631418
+    },
+    "robustness_tasks": {
+      "tasks": 46,
+      "total_seconds": 216606.6379517526,
+      "total_gpu_hours": 60.168510542153506,
+      "minimum_seconds": 3086.230713047087,
+      "median_seconds": 5153.02999763703,
+      "maximum_seconds": 6279.458715184126
+    },
+    "total_recorded_gpu_hours": 155.35502947910547
+  },
+  "method": "The primary totals sum training_runtime_seconds from all 45 accepted arm metrics and evaluation_runtime_seconds from the accepted baseline. Robustness totals sum total_evaluation_time_seconds from all 46 accepted profile results.",
+  "scope_warning": "These are exact recorded runtimes for successful scientific workloads, not scheduler allocation accounting. They exclude model-loading time before each internal timer, preparation, analysis, finalizers, operational smoke tests, and failed or superseded allocations, so they are a lower bound on total project compute.",
+  "source_archive_sha256": "c272f14c672050db2ffa3b5caee2146cfe288064634fec366df04636be7f33bb"
+}

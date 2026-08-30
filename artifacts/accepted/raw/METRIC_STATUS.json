@@ -1,0 +1,9 @@
+{
+  "corrected_mbpp": "authoritative, exact saved outputs re-executed",
+  "humaneval": "valid in math500_corrected_export",
+  "legacy_mbpp": {
+    "reason": "All original MBPP executions failed before candidate execution because RLIMIT_NPROC was applied to bubblewrap before namespace creation.",
+    "status": "invalid"
+  },
+  "math500": "valid corrected result in math500_corrected_export"
+}

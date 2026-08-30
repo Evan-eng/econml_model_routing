@@ -1,0 +1,1055 @@
+{
+  "analyzed_at_utc": "2026-08-28T23:44:26.810001+00:00",
+  "assumption_checks": {
+    "code_concave": false,
+    "code_increasing_at_z_star": false,
+    "general_threshold_identified": false,
+    "math_concave": true,
+    "math_increasing_at_z_star": false,
+    "stationary_point_interior": true
+  },
+  "baseline_comparison": {
+    "balanced_adapter_code_minus_baseline": -0.013229571984435792,
+    "balanced_adapter_math_minus_baseline": -0.18347232752084908,
+    "balanced_adapter_mixture": 0.5,
+    "baseline_code_pass_at_1": 0.0622568093385214,
+    "baseline_math_accuracy": 0.8938589840788476,
+    "best_code_adapter_minus_baseline": -0.006225680933852139,
+    "best_math_adapter_minus_baseline": -0.16755117513267614
+  },
+  "complete_arms": 45,
+  "figure_created": true,
+  "frontier_fits": {
+    "code": {
+      "a": -0.009884279144979554,
+      "alpha": 0.05426246904846129,
+      "c": -0.02080617177893451,
+      "curvature": 0.02080617177893451,
+      "r_squared": 0.022241939295096547,
+      "slope_at_half": 0.0005188067444877008
+    },
+    "math": {
+      "a": 0.7392119833666446,
+      "alpha": 0.5120904266317465,
+      "c": 1.1874560617547714,
+      "curvature": -1.1874560617547714,
+      "r_squared": 0.47643715707612755,
+      "slope_at_half": 0.14548395248925894
+    },
+    "pooled_symmetric": {
+      "a": 0.36466385211083197,
+      "alpha_code": -0.02603004465198075,
+      "alpha_math": 0.5923829403321889,
+      "c": 0.5833249449879181,
+      "r_squared": 0.9588278426185914,
+      "slope_at_half": 0.07300137961687292
+    }
+  },
+  "game_at_calibrated_neutral_beta": null,
+  "generalized_threshold_anchor": {
+    "beta_e": null,
+    "code_slope_at_z_star": -0.002066518767681557,
+    "identified": false,
+    "math_slope_at_z_star": -0.002066518767681602,
+    "reason": "nonpositive_domain_slope_at_stationary_point",
+    "stationarity_residual": -2.2551405187698492e-17,
+    "weighted_curvature": 0.5833249449879184,
+    "z_star_code": 0.37574237396296006,
+    "z_star_math": 0.6242576260370399
+  },
+  "interpretation_limit": "Identifies the controlled post-training capability frontier for this model/data/optimizer. It does not identify frontier-provider R&D responses.",
+  "router_calibration": null,
+  "routing_game_bootstrap_95": {
+    "0.0": {
+      "mixed_nash_expected_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_homogeneous_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_mixed_nash_95": {
+        "high_95": 0.20887743633161543,
+        "low_95": 0.12175263213789489,
+        "median": 0.16823572273535836,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      }
+    },
+    "0.5": {
+      "mixed_nash_expected_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_homogeneous_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_mixed_nash_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      }
+    },
+    "1.0": {
+      "mixed_nash_expected_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_homogeneous_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_mixed_nash_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      }
+    },
+    "16.0": {
+      "mixed_nash_expected_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_differentiation_95": {
+        "high_95": 0.75,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_homogeneous_95": {
+        "high_95": 0.0012970919955526197,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_mixed_nash_95": {
+        "high_95": 0.0012970919955526197,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      }
+    },
+    "2.0": {
+      "mixed_nash_expected_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_homogeneous_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_mixed_nash_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      }
+    },
+    "32.0": {
+      "mixed_nash_expected_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_differentiation_95": {
+        "high_95": 0.875,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_homogeneous_95": {
+        "high_95": 0.0027825262789409823,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_mixed_nash_95": {
+        "high_95": 0.0027825262789409823,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      }
+    },
+    "4.0": {
+      "mixed_nash_expected_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_homogeneous_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_mixed_nash_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      }
+    },
+    "8.0": {
+      "mixed_nash_expected_differentiation_95": {
+        "high_95": 0.0,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_differentiation_95": {
+        "high_95": 0.125,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_homogeneous_95": {
+        "high_95": 1.793263546025168e-05,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      },
+      "planner_gain_over_mixed_nash_95": {
+        "high_95": 1.793263546025168e-05,
+        "low_95": 0.0,
+        "median": 0.0,
+        "total_replicates": 2000,
+        "valid_fraction": 1.0,
+        "valid_replicates": 2000
+      }
+    }
+  },
+  "routing_games": [
+    {
+      "best_homogeneous_mixture": 0.125,
+      "best_homogeneous_welfare": 0.3907803636170546,
+      "beta": 0.0,
+      "mixed_nash_expected_differentiation": 0.0,
+      "mixed_nash_support_provider_1": [
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "mixed_nash_support_provider_2": [
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "mixed_nash_value_provider_1": 0.5,
+      "mixed_nash_welfare": 0.22457379868606983,
+      "nash_welfare_max": 0.3907803636170546,
+      "nash_welfare_min": 0.22457379868606983,
+      "planner_differentiation": 0.0,
+      "planner_gain_over_homogeneous": 0.0,
+      "planner_gain_over_mixed_nash": 0.16620656493098476,
+      "planner_pair": [
+        0.125,
+        0.125
+      ],
+      "planner_welfare": 0.3907803636170546,
+      "pure_nash_count": 81,
+      "pure_nash_pairs": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.125
+        ],
+        [
+          0.0,
+          0.25
+        ],
+        [
+          0.0,
+          0.375
+        ],
+        [
+          0.0,
+          0.5
+        ],
+        [
+          0.0,
+          0.625
+        ],
+        [
+          0.0,
+          0.75
+        ],
+        [
+          0.0,
+          0.875
+        ],
+        [
+          0.0,
+          1.0
+        ],
+        [
+          0.125,
+          0.0
+        ],
+        [
+          0.125,
+          0.125
+        ],
+        [
+          0.125,
+          0.25
+        ],
+        [
+          0.125,
+          0.375
+        ],
+        [
+          0.125,
+          0.5
+        ],
+        [
+          0.125,
+          0.625
+        ],
+        [
+          0.125,
+          0.75
+        ],
+        [
+          0.125,
+          0.875
+        ],
+        [
+          0.125,
+          1.0
+        ],
+        [
+          0.25,
+          0.0
+        ],
+        [
+          0.25,
+          0.125
+        ],
+        [
+          0.25,
+          0.25
+        ],
+        [
+          0.25,
+          0.375
+        ],
+        [
+          0.25,
+          0.5
+        ],
+        [
+          0.25,
+          0.625
+        ],
+        [
+          0.25,
+          0.75
+        ],
+        [
+          0.25,
+          0.875
+        ],
+        [
+          0.25,
+          1.0
+        ],
+        [
+          0.375,
+          0.0
+        ],
+        [
+          0.375,
+          0.125
+        ],
+        [
+          0.375,
+          0.25
+        ],
+        [
+          0.375,
+          0.375
+        ],
+        [
+          0.375,
+          0.5
+        ],
+        [
+          0.375,
+          0.625
+        ],
+        [
+          0.375,
+          0.75
+        ],
+        [
+          0.375,
+          0.875
+        ],
+        [
+          0.375,
+          1.0
+        ],
+        [
+          0.5,
+          0.0
+        ],
+        [
+          0.5,
+          0.125
+        ],
+        [
+          0.5,
+          0.25
+        ],
+        [
+          0.5,
+          0.375
+        ],
+        [
+          0.5,
+          0.5
+        ],
+        [
+          0.5,
+          0.625
+        ],
+        [
+          0.5,
+          0.75
+        ],
+        [
+          0.5,
+          0.875
+        ],
+        [
+          0.5,
+          1.0
+        ],
+        [
+          0.625,
+          0.0
+        ],
+        [
+          0.625,
+          0.125
+        ],
+        [
+          0.625,
+          0.25
+        ],
+        [
+          0.625,
+          0.375
+        ],
+        [
+          0.625,
+          0.5
+        ],
+        [
+          0.625,
+          0.625
+        ],
+        [
+          0.625,
+          0.75
+        ],
+        [
+          0.625,
+          0.875
+        ],
+        [
+          0.625,
+          1.0
+        ],
+        [
+          0.75,
+          0.0
+        ],
+        [
+          0.75,
+          0.125
+        ],
+        [
+          0.75,
+          0.25
+        ],
+        [
+          0.75,
+          0.375
+        ],
+        [
+          0.75,
+          0.5
+        ],
+        [
+          0.75,
+          0.625
+        ],
+        [
+          0.75,
+          0.75
+        ],
+        [
+          0.75,
+          0.875
+        ],
+        [
+          0.75,
+          1.0
+        ],
+        [
+          0.875,
+          0.0
+        ],
+        [
+          0.875,
+          0.125
+        ],
+        [
+          0.875,
+          0.25
+        ],
+        [
+          0.875,
+          0.375
+        ],
+        [
+          0.875,
+          0.5
+        ],
+        [
+          0.875,
+          0.625
+        ],
+        [
+          0.875,
+          0.75
+        ],
+        [
+          0.875,
+          0.875
+        ],
+        [
+          0.875,
+          1.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.125
+        ],
+        [
+          1.0,
+          0.25
+        ],
+        [
+          1.0,
+          0.375
+        ],
+        [
+          1.0,
+          0.5
+        ],
+        [
+          1.0,
+          0.625
+        ],
+        [
+          1.0,
+          0.75
+        ],
+        [
+          1.0,
+          0.875
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "best_homogeneous_mixture": 0.125,
+      "best_homogeneous_welfare": 0.3907803636170546,
+      "beta": 0.5,
+      "mixed_nash_expected_differentiation": 0.0,
+      "mixed_nash_support_provider_1": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_support_provider_2": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_value_provider_1": 0.5,
+      "mixed_nash_welfare": 0.3907803636170546,
+      "nash_welfare_max": 0.3907803636170546,
+      "nash_welfare_min": 0.3907803636170546,
+      "planner_differentiation": 0.0,
+      "planner_gain_over_homogeneous": 0.0,
+      "planner_gain_over_mixed_nash": 0.0,
+      "planner_pair": [
+        0.125,
+        0.125
+      ],
+      "planner_welfare": 0.3907803636170546,
+      "pure_nash_count": 1,
+      "pure_nash_pairs": [
+        [
+          0.125,
+          0.125
+        ]
+      ]
+    },
+    {
+      "best_homogeneous_mixture": 0.125,
+      "best_homogeneous_welfare": 0.3907803636170546,
+      "beta": 1.0,
+      "mixed_nash_expected_differentiation": 0.0,
+      "mixed_nash_support_provider_1": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_support_provider_2": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_value_provider_1": 0.5,
+      "mixed_nash_welfare": 0.3907803636170546,
+      "nash_welfare_max": 0.3907803636170546,
+      "nash_welfare_min": 0.3907803636170546,
+      "planner_differentiation": 0.0,
+      "planner_gain_over_homogeneous": 0.0,
+      "planner_gain_over_mixed_nash": 0.0,
+      "planner_pair": [
+        0.125,
+        0.125
+      ],
+      "planner_welfare": 0.3907803636170546,
+      "pure_nash_count": 1,
+      "pure_nash_pairs": [
+        [
+          0.125,
+          0.125
+        ]
+      ]
+    },
+    {
+      "best_homogeneous_mixture": 0.125,
+      "best_homogeneous_welfare": 0.3907803636170546,
+      "beta": 2.0,
+      "mixed_nash_expected_differentiation": 0.0,
+      "mixed_nash_support_provider_1": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_support_provider_2": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_value_provider_1": 0.5,
+      "mixed_nash_welfare": 0.3907803636170546,
+      "nash_welfare_max": 0.3907803636170546,
+      "nash_welfare_min": 0.3907803636170546,
+      "planner_differentiation": 0.0,
+      "planner_gain_over_homogeneous": 0.0,
+      "planner_gain_over_mixed_nash": 0.0,
+      "planner_pair": [
+        0.125,
+        0.125
+      ],
+      "planner_welfare": 0.3907803636170546,
+      "pure_nash_count": 1,
+      "pure_nash_pairs": [
+        [
+          0.125,
+          0.125
+        ]
+      ]
+    },
+    {
+      "best_homogeneous_mixture": 0.125,
+      "best_homogeneous_welfare": 0.3907803636170546,
+      "beta": 4.0,
+      "mixed_nash_expected_differentiation": 0.0,
+      "mixed_nash_support_provider_1": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_support_provider_2": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_value_provider_1": 0.5,
+      "mixed_nash_welfare": 0.3907803636170546,
+      "nash_welfare_max": 0.3907803636170546,
+      "nash_welfare_min": 0.3907803636170546,
+      "planner_differentiation": 0.0,
+      "planner_gain_over_homogeneous": 0.0,
+      "planner_gain_over_mixed_nash": 0.0,
+      "planner_pair": [
+        0.125,
+        0.125
+      ],
+      "planner_welfare": 0.3907803636170546,
+      "pure_nash_count": 1,
+      "pure_nash_pairs": [
+        [
+          0.125,
+          0.125
+        ]
+      ]
+    },
+    {
+      "best_homogeneous_mixture": 0.125,
+      "best_homogeneous_welfare": 0.3907803636170546,
+      "beta": 8.0,
+      "mixed_nash_expected_differentiation": 0.0,
+      "mixed_nash_support_provider_1": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_support_provider_2": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_value_provider_1": 0.5,
+      "mixed_nash_welfare": 0.3907803636170546,
+      "nash_welfare_max": 0.3907803636170546,
+      "nash_welfare_min": 0.3907803636170546,
+      "planner_differentiation": 0.0,
+      "planner_gain_over_homogeneous": 0.0,
+      "planner_gain_over_mixed_nash": 0.0,
+      "planner_pair": [
+        0.125,
+        0.125
+      ],
+      "planner_welfare": 0.3907803636170546,
+      "pure_nash_count": 1,
+      "pure_nash_pairs": [
+        [
+          0.125,
+          0.125
+        ]
+      ]
+    },
+    {
+      "best_homogeneous_mixture": 0.125,
+      "best_homogeneous_welfare": 0.3907803636170546,
+      "beta": 16.0,
+      "mixed_nash_expected_differentiation": 0.0,
+      "mixed_nash_support_provider_1": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_support_provider_2": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_value_provider_1": 0.5,
+      "mixed_nash_welfare": 0.3907803636170546,
+      "nash_welfare_max": 0.3907803636170546,
+      "nash_welfare_min": 0.3907803636170546,
+      "planner_differentiation": 0.0,
+      "planner_gain_over_homogeneous": 0.0,
+      "planner_gain_over_mixed_nash": 0.0,
+      "planner_pair": [
+        0.125,
+        0.125
+      ],
+      "planner_welfare": 0.3907803636170546,
+      "pure_nash_count": 1,
+      "pure_nash_pairs": [
+        [
+          0.125,
+          0.125
+        ]
+      ]
+    },
+    {
+      "best_homogeneous_mixture": 0.125,
+      "best_homogeneous_welfare": 0.3907803636170546,
+      "beta": 32.0,
+      "mixed_nash_expected_differentiation": 0.0,
+      "mixed_nash_support_provider_1": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_support_provider_2": [
+        [
+          0.125,
+          1.0
+        ]
+      ],
+      "mixed_nash_value_provider_1": 0.5,
+      "mixed_nash_welfare": 0.3907803636170546,
+      "nash_welfare_max": 0.3907803636170546,
+      "nash_welfare_min": 0.3907803636170546,
+      "planner_differentiation": 0.0,
+      "planner_gain_over_homogeneous": 0.0,
+      "planner_gain_over_mixed_nash": 0.0,
+      "planner_pair": [
+        0.125,
+        0.125
+      ],
+      "planner_welfare": 0.3907803636170546,
+      "pure_nash_count": 1,
+      "pure_nash_pairs": [
+        [
+          0.125,
+          0.125
+        ]
+      ]
+    }
+  ],
+  "seed_sensitivity": {
+    "code_endpoint_gain_positive_seeds": 2,
+    "leave_one_seed_out_beta_e_range": {
+      "max": 45109.03589526519,
+      "min": 45109.03589526519
+    },
+    "math_endpoint_gain_positive_seeds": 5,
+    "note": "Five-seed percentile bootstrap coverage is not guaranteed. Single-seed and leave-one-seed-out results are reported as optimization sensitivity checks.",
+    "single_seed_beta_e_range": {
+      "max": 28806528.20385458,
+      "min": 3707.22755589167
+    },
+    "single_seed_count": 5,
+    "single_seed_identified_count": 3
+  },
+  "technology_bootstrap_95": {
+    "code_c": {
+      "high_95": 0.05929489446999161,
+      "low_95": -0.11869759293883814,
+      "median": -0.01962032779153411,
+      "total_replicates": 2000,
+      "valid_fraction": 1.0,
+      "valid_replicates": 2000
+    },
+    "code_slope_at_z_star": {
+      "high_95": 0.02112774931782387,
+      "low_95": -0.029311197063569393,
+      "median": -0.0019026481332157204,
+      "total_replicates": 2000,
+      "valid_fraction": 1.0,
+      "valid_replicates": 2000
+    },
+    "math_c": {
+      "high_95": 1.5357970914604706,
+      "low_95": 0.7903613192468373,
+      "median": 1.1923817400693808,
+      "total_replicates": 2000,
+      "valid_fraction": 1.0,
+      "valid_replicates": 2000
+    },
+    "math_slope_at_z_star": {
+      "high_95": 0.02112774931782383,
+      "low_95": -0.02931119706356939,
+      "median": -0.0019026481332157785,
+      "total_replicates": 2000,
+      "valid_fraction": 1.0,
+      "valid_replicates": 2000
+    },
+    "z_star_math": {
+      "high_95": 0.6602351629080233,
+      "low_95": 0.5911986207313679,
+      "median": 0.6244240431447795,
+      "total_replicates": 2000,
+      "valid_fraction": 1.0,
+      "valid_replicates": 2000
+    }
+  },
+  "thresholds": {
+    "beta_e_general_bootstrap_95": {
+      "high_95": 4484415.933437392,
+      "low_95": 442.54013449558204,
+      "median": 6609.510175895341,
+      "total_replicates": 2000,
+      "valid_fraction": 0.429,
+      "valid_replicates": 858
+    },
+    "beta_e_general_point": null,
+    "beta_e_symmetric_bootstrap_95": {
+      "high_95": 102.29643968775908,
+      "low_95": 36.26325497630368,
+      "median": 53.832896030540795,
+      "total_replicates": 2000,
+      "valid_fraction": 1.0,
+      "valid_replicates": 2000
+    },
+    "beta_e_symmetric_point": 54.729114023129185,
+    "generalized_bootstrap_identification_rate": 0.429,
+    "generalized_bootstrap_identification_reasons": {
+      "identified": 858,
+      "nonpositive_domain_slope_at_stationary_point": 1142
+    },
+    "generalized_bootstrap_identified_replicates": 858,
+    "generalized_bootstrap_total_replicates": 2000,
+    "small_seed_inference_note": "Two-way percentile intervals jointly resample tasks and five training-seed blocks but should be treated as exploratory because five clusters do not guarantee nominal coverage. Generalized beta_E intervals omit draws in which the threshold is unidentified and are therefore conditional on identification; the identification rate and failure reasons must be reported with the interval."
+  },
+  "unadapted_baseline": {
+    "code_execution_enabled": true,
+    "code_metric_status": "corrected_mbpp_rescore",
+    "code_n": 257,
+    "code_pass_at_1": 0.0622568093385214,
+    "code_sandbox": "bwrap",
+    "design_sha256": "95007c178a4e621a1cfe98f78c03ce23438afb7faa1e5add1c052b14e6ba0c09",
+    "evaluation_runtime_seconds": 3637.070419073105,
+    "executor_release": "c3cb569cf51c3f53a3c7492388c7183c9f91c6df",
+    "kind": "unadapted_baseline",
+    "math_accuracy": 0.8938589840788476,
+    "math_n": 1319,
+    "model": "Qwen/Qwen3-8B",
+    "provenance_sha256": "874af626cc1bbea7b394833e0e7c3452342abfa056ae26b919a0e4e31299fb66",
+    "run_contract_sha256": "0877ce7d578a9005f928905e8bc0812664eff746381501a6468a6487e21bd889"
+  }
+}

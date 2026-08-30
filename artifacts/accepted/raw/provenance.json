@@ -1,0 +1,104 @@
+{
+  "datasets": {
+    "code_eval": {
+      "config": "sanitized",
+      "license": "CC-BY-4.0",
+      "repo_id": "google-research-datasets/mbpp",
+      "revision": "4bb6404fdc6cacfda99d4ac4205087b89d32030c",
+      "split": "test",
+      "url": "https://huggingface.co/datasets/google-research-datasets/mbpp"
+    },
+    "code_train": {
+      "config": null,
+      "license": "ODC-By",
+      "repo_id": "bigcode/self-oss-instruct-sc2-exec-filter-50k",
+      "revision": "356bb069eee815daa6e23e9a282eeefe1490ad44",
+      "split": "train",
+      "url": "https://huggingface.co/datasets/bigcode/self-oss-instruct-sc2-exec-filter-50k"
+    },
+    "math_eval": {
+      "config": "main",
+      "license": "MIT",
+      "repo_id": "openai/gsm8k",
+      "revision": "740312add88f781978c0658806c59bc2815b9866",
+      "split": "test",
+      "url": "https://huggingface.co/datasets/openai/gsm8k"
+    },
+    "math_train": {
+      "config": "default",
+      "license": "Apache-2.0",
+      "repo_id": "open-r1/OpenR1-Math-220k",
+      "revision": "e4e141ec9dea9f8326f4d347be56105859b2bd68",
+      "split": "train",
+      "url": "https://huggingface.co/datasets/open-r1/OpenR1-Math-220k"
+    }
+  },
+  "evaluation": {
+    "code_rows": 257,
+    "math_rows": 1319
+  },
+  "model": {
+    "repo_id": "Qwen/Qwen3-8B",
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218"
+  },
+  "pool_stats": {
+    "code_train": {
+      "capped_tokens": 1468152,
+      "original_tokens_max": 1334,
+      "original_tokens_p50": 290.0,
+      "original_tokens_p90": 463.0,
+      "original_tokens_p95": 541.9499999999998,
+      "rejected_contamination": 0,
+      "rejected_schema": 0,
+      "retained_token_fraction": 0.9759643796587004,
+      "rows": 4822,
+      "sha256": "75020762f3a097982f3717de98330e6a0e65e50831a9b24e8242f688159e7742",
+      "truncated_rows": 305,
+      "truncation_rate": 0.06325176275404397
+    },
+    "math_train": {
+      "capped_tokens": 1468131,
+      "original_tokens_max": 4013,
+      "original_tokens_p50": 405.0,
+      "original_tokens_p90": 974.0,
+      "original_tokens_p95": 1176.2999999999997,
+      "rejected_contamination": 0,
+      "rejected_schema": 0,
+      "retained_token_fraction": 0.748466748711967,
+      "rows": 3875,
+      "sha256": "55d16995ddfcaacb0be0ad194fcfb3c2969081fac5e330c499230fc4ca3a9ebc",
+      "truncated_rows": 1391,
+      "truncation_rate": 0.35896774193548386
+    }
+  },
+  "anonymization_note": "Only the institution-specific CUDA installation path was generalized for double-blind review; all scientific identities, versions, revisions, counts, and checksums are unchanged.",
+  "prepared_at_utc": "2026-08-28T16:53:30.625218+00:00",
+  "robustness_datasets": {
+    "humaneval": {
+      "config": null,
+      "repo_id": "openai/openai_humaneval",
+      "revision": "7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+      "split": "test"
+    },
+    "math500": {
+      "config": "default",
+      "repo_id": "HuggingFaceH4/MATH-500",
+      "revision": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+      "split": "test"
+    }
+  },
+  "script_version": "1.5.0",
+  "software": {
+    "accelerate": "1.8.1",
+    "bitsandbytes": "0.46.1",
+    "cuda_home": "/usr/local/cuda-12.6",
+    "datasets": "3.6.0",
+    "numpy": "2.2.6",
+    "peft": "0.16.0",
+    "platform": "Linux-5.14.0-570.128.1.el9_6.x86_64-x86_64-with-glibc2.34",
+    "python": "3.10.13 (main, Sep 11 2023, 13:44:35) [GCC 11.2.0]",
+    "torch": "2.7.1+cu126",
+    "torch_cuda": "12.6",
+    "transformers": "4.53.2"
+  }
+}

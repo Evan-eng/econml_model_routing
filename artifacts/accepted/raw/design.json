@@ -1,0 +1,151 @@
+{
+  "beta_grid": [
+    0.0,
+    0.5,
+    1.0,
+    2.0,
+    4.0,
+    8.0,
+    16.0,
+    32.0
+  ],
+  "bootstrap_reps": 2000,
+  "created_at_utc": "2026-08-28T16:51:49.480921+00:00",
+  "dataset_revisions": {
+    "code_eval": "4bb6404fdc6cacfda99d4ac4205087b89d32030c",
+    "code_train": "356bb069eee815daa6e23e9a282eeefe1490ad44",
+    "humaneval": "7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+    "math500": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+    "math_eval": "740312add88f781978c0658806c59bc2815b9866",
+    "math_train": "e4e141ec9dea9f8326f4d347be56105859b2bd68"
+  },
+  "datasets": {
+    "code_eval": {
+      "config": "sanitized",
+      "license": "CC-BY-4.0",
+      "repo_id": "google-research-datasets/mbpp",
+      "split": "test",
+      "url": "https://huggingface.co/datasets/google-research-datasets/mbpp"
+    },
+    "code_train": {
+      "config": null,
+      "license": "ODC-By",
+      "repo_id": "bigcode/self-oss-instruct-sc2-exec-filter-50k",
+      "split": "train",
+      "url": "https://huggingface.co/datasets/bigcode/self-oss-instruct-sc2-exec-filter-50k"
+    },
+    "math_eval": {
+      "config": "main",
+      "license": "MIT",
+      "repo_id": "openai/gsm8k",
+      "split": "test",
+      "url": "https://huggingface.co/datasets/openai/gsm8k"
+    },
+    "math_train": {
+      "config": "default",
+      "license": "Apache-2.0",
+      "repo_id": "open-r1/OpenR1-Math-220k",
+      "split": "train",
+      "url": "https://huggingface.co/datasets/open-r1/OpenR1-Math-220k"
+    }
+  },
+  "decision_rules": {
+    "ecosystem": "Claim an empirically meaningful dynamic wedge only at preregistered beta values where the planner gain is positive and its paired bootstrap interval excludes zero.",
+    "technology": "Treat increasing returns and concavity as supported only when the paired two-way bootstrap intervals imply positive slopes at fitted z^circ and c>0.",
+    "threshold": "Report generalized beta_E only when fitted z^circ is interior, both domain slopes there are positive, and weighted curvature is positive; otherwise report the theorem's maintained technology conditions as empirically unsupported."
+  },
+  "decontamination": {
+    "overlap_threshold": 0.5,
+    "word_ngram": 8
+  },
+  "estimands": {
+    "interpretation": "Identifies the controlled post-training capability frontier for this model/data/optimizer. It does not identify frontier-provider R&D responses.",
+    "primary": [
+      "q_math(z): GSM8K exact-answer accuracy after fixed-budget adaptation",
+      "q_code(z): sanitized MBPP pass@1 after fixed-budget adaptation",
+      "generalized beta_E from local slopes and curvatures at fitted interior z^circ",
+      "global planner versus pure-Nash capability portfolios over observed arms"
+    ]
+  },
+  "eval_code_n": 0,
+  "eval_math_n": 0,
+  "generation": {
+    "batch_size": 4,
+    "code_max_new_tokens": 384,
+    "do_sample": false,
+    "math_max_new_tokens": 256,
+    "temperature": 0.0
+  },
+  "hypotheses": [
+    "H1: each held-out capability is increasing and concave in its own-domain share",
+    "H2: above beta_E a complementary provider pair beats homogeneous portfolios",
+    "H3: the planner's optimal differentiation weakly increases with router responsiveness",
+    "H4: for some beta, routed-demand Nash portfolios differ from the global planner pair"
+  ],
+  "max_length": 512,
+  "mixtures": [
+    0.0,
+    0.125,
+    0.25,
+    0.375,
+    0.5,
+    0.625,
+    0.75,
+    0.875,
+    1.0
+  ],
+  "model": "Qwen/Qwen3-8B",
+  "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "pool_multiplier": 1.4,
+  "preset": "confirmatory",
+  "randomization": "Mixture is assigned at token-block level. Training seed is a paired block shared by every mixture arm; evaluation tasks are identical across arms.",
+  "robustness": [
+    "domain-specific quadratic frontiers (primary local threshold)",
+    "pooled symmetric quadratic frontier (direct theorem mapping)",
+    "nonparametric observed-arm planner and Nash game (primary global comparison)",
+    "exploratory paired resampling of training seeds and evaluation tasks, with identification rates and leave-one-seed-out sensitivity reported separately",
+    "optional completion-only SFT in a separately initialized design"
+  ],
+  "robustness_datasets": {
+    "humaneval": {
+      "config": null,
+      "repo_id": "openai/openai_humaneval",
+      "split": "test"
+    },
+    "math500": {
+      "config": "default",
+      "repo_id": "HuggingFaceH4/MATH-500",
+      "split": "test"
+    }
+  },
+  "safety": "MBPP execution requires explicit opt-in plus the verified bubblewrap filesystem and network boundary.",
+  "schema_version": 1,
+  "script_version": "1.5.0",
+  "seeds": [
+    11,
+    29,
+    47,
+    71,
+    101
+  ],
+  "task_mass_math": 0.5,
+  "title": "Fixed-budget randomized capability-mixture experiment",
+  "token_budget": 1048576,
+  "training": {
+    "completion_only_loss": false,
+    "epochs": 1,
+    "gradient_accumulation_steps": 16,
+    "gradient_checkpointing": true,
+    "learning_rate": 0.0002,
+    "load_in_4bit": true,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "lora_rank": 16,
+    "method": "QLoRA SFT",
+    "per_device_batch_size": 1,
+    "scheduler": "cosine",
+    "target_modules": "all-linear",
+    "warmup_ratio": 0.03,
+    "weight_decay": 0.0
+  }
+}
