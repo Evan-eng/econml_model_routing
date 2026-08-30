@@ -53,7 +53,7 @@ recovery jobs, and emits a checksummed read-only export.
 
 The full mixture-by-seed robustness surface can support benchmark-specific
 frontier plots, mixture-by-benchmark interactions, seed variation, and paired
-task-bootstrap intervals. Only the four preregistered profiles are
+task-bootstrap intervals. Only the four prespecified profiles are
 confirmatory. The additional 42 profiles remain exploratory, including any
 profile-wise tests. Null, adverse, or reversed findings remain in the record.
 

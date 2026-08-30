@@ -1,7 +1,7 @@
 # All-profile exploratory robustness extension
 
 This extension evaluates MATH-500 and HumanEval for the 42 trained adapters
-outside the preregistered baseline and seed-11 endpoint set. Joined with the
+outside the prespecified baseline and seed-11 endpoint set. Joined with the
 four confirmatory robustness profiles, it covers all 46 model profiles.
 
 The original four-profile result remains the confirmatory robustness test. The

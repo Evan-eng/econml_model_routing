@@ -9,8 +9,11 @@ The complete training run is published separately under
 That LFS-backed tree contains all 2,101 source files and 57,247,182,883 logical
 bytes from the accepted run: all 45 final LoRA adapters, both retained
 checkpoints for every arm, optimizer and scheduler state, tokenizer and
-configuration files, raw predictions, metrics, receipts, status history, and
-analysis outputs. Its `SOURCE_ARTIFACT_MANIFEST.json` has SHA-256
+configuration files, prepared training and evaluation JSONL caches, raw
+predictions, metrics, receipts, status history, and analysis outputs. The
+experiment-produced QLoRA adapters and retained checkpoints are trained model
+artifacts; the upstream Qwen3-8B base weights are not duplicated. Its
+`SOURCE_ARTIFACT_MANIFEST.json` has SHA-256
 `71e80fb84069b5d3940e7553f761404c2491273506b8e09559751c1b2c1d84ac`.
 
 ## Canonical archives

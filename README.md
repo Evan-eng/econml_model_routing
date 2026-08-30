@@ -1,20 +1,25 @@
-# Model Routing as Innovation Policy
+# A Perfect Router Can Create an Imperfect Ecosystem: Model Routing and the Direction of AI Innovation
 
 This repository contains the code and accepted artifacts for the paper's
-capability-frontier experiment. The design trains independent QLoRA adapters at
-different math/code data allocations, measures each adapter's two-domain
-capabilities, then compares the provider equilibrium with the
+capability-frontier experiment. The accepted design trains independent QLoRA
+adapters at different math/code data allocations, measures each adapter's
+two-domain capabilities, then compares the provider equilibrium with the
 quality-maximizing pair under the same softmax router.
 
 ## Accepted confirmatory results
 
-The PACE ICE run completed all 45 preregistered mixture-seed arms, the shared
+The PACE ICE run completed all 45 prespecified mixture-seed arms, the shared
 unadapted baseline, four confirmatory robustness profiles, and the 42-profile
 exploratory robustness extension. The accepted results use the corrected MBPP
 sandbox rescore and corrected symbolic MATH-500 score; the legacy MBPP and
 MATH-500 fields are invalid and should not be reported.
 
 ![Capability frontier, planner comparison, and threshold uncertainty](artifacts/accepted/paper/capability_routing_results.png)
+
+The right panel is retained as a receipt-bound diagnostic. It conditionally
+plots only bootstrap draws in which the generalized threshold is identified and
+is dominated by an extreme estimate; because the point threshold is
+unidentified, that histogram must not be interpreted as a threshold interval.
 
 The main findings are:
 
@@ -24,7 +29,7 @@ The main findings are:
   MATH-500 accuracy rises from 22.244% unadapted to 29.877% at the all-math
   endpoint, with a positive endpoint gain in all five seeds. HumanEval and
   corrected MBPP do not show the same frontier.
-- The preregistered generalized threshold is not identified because the fitted
+- The prespecified generalized threshold is not identified because the fitted
   domain slopes at the interior stationary point are nonpositive. The
   stationary-point math share has bootstrap median 0.624 and a 95% interval of
   [0.591, 0.660].
@@ -39,7 +44,14 @@ The individually browsable accepted outputs are
 The receipt-bound paper packet and complete export are documented in
 [`artifacts/accepted/README.md`](artifacts/accepted/README.md).
 
-## Default overnight experiment
+## Development and replication presets
+
+The accepted paper experiment is the 45-arm `confirmatory` preset described
+above and in [`docs/EXPERIMENT_CHARTER.md`](docs/EXPERIMENT_CHARTER.md). The
+smaller presets below remain useful for development, infrastructure checks, and
+replication planning, but they are not the experiment reported in the paper.
+
+### Default overnight development preset
 
 The default is sized for an approximately 12-hour overnight run on four strong
 GPUs. It uses `Qwen/Qwen3-8B` with five fixed-budget math shares
@@ -79,9 +91,9 @@ occur at `z = 0.5`. Bootstrap draws with a boundary stationary point or failed
 monotonicity/curvature conditions are marked unidentified, and the identification
 rate is reported alongside the conditional interval.
 
-The overnight grid is the recommended workshop run. The small-model smoke test
-below verifies plumbing only; it does not diagnose Qwen3-8B treatment power.
-Before launching the full grid, run the actual-model endpoint preflight:
+The overnight grid is a development preset. The small-model smoke test below
+verifies plumbing only; it does not diagnose Qwen3-8B treatment power. Before
+launching the grid, run the actual-model endpoint preflight:
 
 ```bash
 export EXPERIMENT_DIR=$PWD/experiments/qwen3_8b_overnight
@@ -96,9 +108,12 @@ the registered overnight directory for reuse by the full launcher. The report
 is conditional on one training seed and must not be presented as total
 uncertainty. With many GPUs,
 parallelize across arms rather than within an arm; this preserves independence
-and usually gives the best wall-clock scaling. An 8B QLoRA arm is intended for
-one modern NVIDIA GPU; 48--80 GB is comfortable, while smaller cards may require
-a lower evaluation batch size.
+and usually gives the best wall-clock scaling. The accepted PACE ICE run used
+one `HX00` GPU per independent task: H100 allocations for the primary run and
+H100 or H200 allocations for robustness recovery. Each GPU task requested eight
+CPU cores, 224 GiB of host memory, 50 GiB of node-local scratch, and at most
+15:30 per attempt. The 224 GiB request is host memory, not GPU memory. Use the
+same-model preflight to size a different system.
 
 ```bash
 python capability_mixture_experiment.py init \
@@ -122,7 +137,7 @@ must be roughly 1.7 hours or less. Runtime depends on GPU type, storage, and
 generation speed; use the real-model preflight timings rather than the
 small-model smoke test to assess the overnight target.
 
-## Smaller six-hour option
+### Smaller six-hour development preset
 
 With roughly four GPUs and a six-hour wall-clock limit, use the `six-hour`
 preset. It schedules 15 adapters plus one unadapted baseline: five mixture
@@ -188,7 +203,7 @@ python capability_mixture_experiment.py analyze --experiment-dir experiments/smo
 
 ## Stage 2: optional pilot
 
-The preregistered pilot uses five mixture shares and three seeds (15 arms):
+The prespecified pilot uses five mixture shares and three seeds (15 arms):
 
 ```bash
 python capability_mixture_experiment.py init \
