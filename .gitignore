@@ -10,3 +10,6 @@ artifacts/accepted/*
 !artifacts/accepted/ARCHIVES.sha256
 !artifacts/accepted/GITHUB_PUBLICATION_RECEIPT.json
 !artifacts/accepted/accepted-*.zip
+!artifacts/accepted/paper/
+!artifacts/accepted/paper/*.csv
+!artifacts/accepted/paper/*.png

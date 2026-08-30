@@ -1,0 +1,5 @@
+profile,classification,math_share,seed,gsm8k,mbpp,math500,humaneval
+unadapted_baseline,confirmatory,,,0.893859,0.062257,0.222445,0.847561
+z_0p0000_seed_0011,confirmatory,0,11,0.329037,0.046693,0.146293,0.707317
+z_0p5000_seed_0011,confirmatory,0.5,11,0.727824,0.046693,0.290581,0.719512
+z_1p0000_seed_0011,confirmatory,1,11,0.705838,0.058366,0.294000,0.780488

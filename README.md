@@ -1,31 +1,43 @@
-# GPU-ready capability-frontier experiment
+# Model Routing as Innovation Policy
 
-This artifact runs the empirical experiment proposed in *Model Routing as
-Innovation Policy* on a workstation or Slurm cluster. It uses no Modal
-services. The main design trains independent QLoRA adapters at different
-math/code data allocations, measures each adapter's two-domain capabilities,
-then compares the provider equilibrium with the quality-maximizing pair under
-the same softmax router.
+This repository contains the code and accepted artifacts for the paper's
+capability-frontier experiment. The design trains independent QLoRA adapters at
+different math/code data allocations, measures each adapter's two-domain
+capabilities, then compares the provider equilibrium with the
+quality-maximizing pair under the same softmax router.
 
-## PACE ICE confirmatory run
+## Accepted confirmatory results
 
-The frozen ICE workflow runs the complete 45-arm confirmatory design, one
-untouched baseline, and four robustness profiles. It deploys an exact Git SHA,
-builds the locked environment on a CPU node, prepares same-model smoke and full
-designs concurrently, proves bubblewrap containment on an allocated GPU, and
-then fans the full grid out to 46 GPUs at most.
+The PACE ICE run completed all 45 preregistered mixture-seed arms, the shared
+unadapted baseline, four confirmatory robustness profiles, and the 42-profile
+exploratory robustness extension. The accepted results use the corrected MBPP
+sandbox rescore and corrected symbolic MATH-500 score; the legacy MBPP and
+MATH-500 fields are invalid and should not be reported.
 
-```bash
-export RELEASE_SHA=<full-pushed-40-character-sha>
-export MAX_PARALLEL=45
-bash slurm/submit_ice_confirmatory.sh
-```
+![Capability frontier, planner comparison, and threshold uncertainty](artifacts/accepted/paper/capability_routing_results.png)
 
-The submitter uses `coe-ice`, requests no account or partition, keeps persistent
-artifacts under `/storage/ice-shared/cs7634/staff/econml`, and writes a submission
-receipt before the chain runs. Run it only from the exact remote release named
-by `pace-code-release`; it refuses a dirty or mismatched deployment, reduced
-grid, or duplicate run directory.
+The main findings are:
+
+- Every adapted mean on the primary GSM8K and corrected MBPP outcomes is below
+  the unadapted baseline (89.386% GSM8K and 6.226% MBPP).
+- The harder-benchmark extension finds a directional math frontier: mean
+  MATH-500 accuracy rises from 22.244% unadapted to 29.877% at the all-math
+  endpoint, with a positive endpoint gain in all five seeds. HumanEval and
+  corrected MBPP do not show the same frontier.
+- The preregistered generalized threshold is not identified because the fitted
+  domain slopes at the interior stationary point are nonpositive. The
+  stationary-point math share has bootstrap median 0.624 and a 95% interval of
+  [0.591, 0.660].
+- These results identify capability reallocation under one controlled QLoRA
+  intervention on Qwen3-8B. They do not identify provider investment, R&D
+  response, or equilibrium behavior.
+
+The individually browsable accepted outputs are
+[`confirmatory_results.csv`](artifacts/accepted/paper/confirmatory_results.csv),
+[`all_profile_means.csv`](artifacts/accepted/paper/all_profile_means.csv), and
+[`capability_routing_results.png`](artifacts/accepted/paper/capability_routing_results.png).
+The receipt-bound paper packet and complete export are documented in
+[`artifacts/accepted/README.md`](artifacts/accepted/README.md).
 
 ## Default overnight experiment
 
@@ -285,40 +297,3 @@ length quantiles. The fixed allocation remains internally comparable when
 truncation differs by domain, but the estimated frontier then partly reflects
 that preprocessing choice and should not be interpreted as an absolute
 leaderboard capability. Inspect these diagnostics before changing `max_length`.
-
-## Optional harder-benchmark check
-
-The default overnight run deliberately prioritizes training-seed replication
-over expensive additional generation. The locked `robustness` extra supplies
-the standardized layer for the baseline plus endpoint and balanced adapters:
-
-```bash
-uv run python run_benchmark_robustness.py \
-  --experiment-dir experiments/qwen3_8b_overnight \
-  --allow-generated-code-execution \
-  --code-sandbox bwrap
-```
-
-This uses lm-eval's `hendrycks_math500` and `humaneval_instruct` tasks and
-writes results under `robustness_benchmarks/`. It is evaluation-only: no new
-adapters are trained. Use `--limit 20 --dry-run` to inspect the commands, but
-never report a limited debug run as a benchmark result. To parallelize the four
-default profiles, launch four processes on separate GPUs with `--profiles`
-set respectively to `baseline`, `0:11`, `0.5:11`, and `1:11`.
-
-## High-value robustness runs
-
-After the confirmatory run, the most informative additions are:
-
-1. Reinitialize a new experiment with half and double the token budget. This
-   tests whether the frontier and routing wedge depend on adaptation scale.
-2. Reinitialize with `--completion-only-loss`. This tests the full-sequence
-   loss normalization used in the primary design.
-3. Repeat the same preregistered grid on a second open model family. Do not pool
-   the model families; report the frontiers and thresholds separately.
-4. Calibrate router responsiveness with randomized assignments near quality
-   ties and pass the resulting audit file to `analyze --router-audit FILE`.
-
-The experiment identifies a controlled post-training capability frontier. It
-does not by itself show that frontier model providers change R&D in response to
-routed traffic; that remains a separate provider-response estimand.
