@@ -59,7 +59,10 @@ confidence interval.
   scope limitation.
 - [`cpu_rescore_summary.json`](artifacts/accepted/compute/cpu_rescore_summary.json)
   and [`cpu_rescore_ledger.csv`](artifacts/accepted/compute/cpu_rescore_ledger.csv):
-  terminal accounting for the CPU-only corrected MBPP re-execution.
+  anonymized aggregate terminal accounting for the CPU-only corrected MBPP
+  re-execution. The ledger preserves task types, normalized states, resource
+  requests, allocation counts, and elapsed-time totals without scheduler IDs or
+  timestamps.
 
 The original MBPP values are invalid because the process limit was applied to
 bubblewrap before namespace creation. The reported MBPP values re-execute saved
@@ -80,7 +83,8 @@ The accepted metrics record 155.355 successful scientific GPU task-hours:
 60.169 across 46 robustness profiles. These internal timers exclude model load,
 failed/superseded attempts, preparation, and orchestration, so this is explicitly
 a lower bound rather than total scheduler allocation. Corrected MBPP rescoring
-was CPU-only; its terminal summary and 288-row ledger are included above.
+was CPU-only; the included aggregate ledger summarizes all 288 allocation rows
+and 4,774 elapsed allocation-seconds.
 
 ## Reproduction
 

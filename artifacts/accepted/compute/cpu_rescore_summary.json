@@ -1,10 +1,12 @@
 {
   "allocation_rows": 288,
   "created_at_utc": "2026-08-28T23:41:09.618352+00:00",
+  "ledger_format": "anonymized aggregate grouped by job name, normalized state, exit code, and resource request",
   "states": {
-    "CANCELLED by 3039927": 5,
+    "CANCELLED": 5,
     "COMPLETED": 247,
     "FAILED": 36
   },
+  "total_elapsed_seconds": 4774,
   "total_gpu_hours": 0.0
 }
